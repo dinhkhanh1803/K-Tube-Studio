@@ -1,0 +1,57 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Node dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Binaries, tools & Embedded runtimes
+runtime/
+tools/
+ai/engines/
+ai/models/
+ai/logs/
+*.part
+
+# Workspace & Output generated files
+workspace/*
+!workspace/.gitkeep
+output/*
+!output/.gitkeep
+
+# Sensitive files, API Keys, Cookies & Local configs
+keys.json
+cookies.txt
+cookies/*
+!cookies/.gitkeep
+config.yaml
+
+# User voice clones & cache in assets
+assets/voices/*
+!assets/voices/.gitkeep
+assets/.imagegen_status.json
+assets/.stock_cache/
+assets/.videogen_status.json
+
+# Logs & temp files
+*.log
+*.tmp
+*.temp
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini

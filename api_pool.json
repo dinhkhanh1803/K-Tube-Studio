@@ -1,0 +1,52 @@
+[
+  {
+    "id": "gemini-primary",
+    "name": "Google Gemini (Chính)",
+    "provider": "openai",
+    "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+    "api_key_env": "GEMINI_API_KEY",
+    "api_key": "",
+    "model": "gemini-auto",
+    "enabled": true
+  },
+  {
+    "id": "gemini-backup",
+    "name": "Google Gemini (Dự phòng 2)",
+    "provider": "openai",
+    "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+    "api_key_env": "GEMINI_API_KEY_2",
+    "api_key": "",
+    "model": "gemini-auto",
+    "enabled": false
+  },
+  {
+    "id": "9router",
+    "name": "9router AI Gateway",
+    "provider": "openai",
+    "base_url": "https://api.9router.com/v1",
+    "api_key_env": "ROUTER9_API_KEY",
+    "api_key": "",
+    "model": "gemini-auto",
+    "enabled": false
+  },
+  {
+    "id": "cockpit",
+    "name": "Cockpit AI Gateway",
+    "provider": "openai",
+    "base_url": "https://api.cockpit.ai/v1",
+    "api_key_env": "COCKPIT_API_KEY",
+    "api_key": "",
+    "model": "gpt-4o-mini",
+    "enabled": false
+  },
+  {
+    "id": "deepseek",
+    "name": "DeepSeek API",
+    "provider": "openai",
+    "base_url": "https://api.deepseek.com",
+    "api_key_env": "DEEPSEEK_API_KEY",
+    "api_key": "",
+    "model": "deepseek-chat",
+    "enabled": false
+  }
+]

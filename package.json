@@ -1,0 +1,12 @@
+{
+  "name": "k-tube-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "K-Tube Studio AI Video Production Platform",
+  "scripts": {
+    "start": "ktube.cmd ui",
+    "dev": "ktube.cmd ui",
+    "doctor": "ktube.cmd doctor",
+    "voices": "ktube.cmd voices --lang vi"
+  }
+}
