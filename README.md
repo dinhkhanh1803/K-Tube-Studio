@@ -4,6 +4,28 @@ Nền tảng AI sản xuất video tự động đa nền tảng (Douyin, TikTok
 
 ---
 
+## ⚡ Cài đặt nhanh (Dành cho người mới clone repo)
+
+### 1. Yêu cầu hệ thống
+- Hệ điều hành: **Windows 10 / 11 (64-bit)**
+- **Python 3.10 - 3.12** (khi cài đặt nhớ tích chọn **"Add python.exe to PATH"**)
+- **FFmpeg** (công cụ xử lý âm thanh/video)
+
+### 2. Cài đặt tự động (1-Click Setup)
+Bạn chỉ cần bấm đúp vào file:
+```text
+setup.cmd
+```
+*(Hoặc bấm trực tiếp `K-Tube Studio (Web).cmd` — hệ thống sẽ tự động phát hiện và chạy cài đặt nếu máy chưa có môi trường)*
+
+Script sẽ tự động:
+- Khởi tạo môi trường ảo Python (`.venv`)
+- Cài đặt toàn bộ các thư viện cần thiết từ `requirements.txt`
+- Kiểm tra FFmpeg (hướng dẫn cài qua `winget install Gyan.FFmpeg` nếu thiếu)
+- Khởi tạo sẵn file `keys.json` từ `keys.example.json`
+
+---
+
 ## 🚀 Cách khởi động
 
 ### Cách 1: Chạy bản Web trên trình duyệt (Khuyên dùng)
@@ -20,9 +42,31 @@ Bấm đúp file:
 K-Tube Studio (App).cmd
 ```
 
+### Cách 3: Chạy qua lệnh (CLI / NPM)
+```bash
+npm start
+# hoặc
+pnpm start
+# hoặc
+ktube.cmd ui
+```
+
+---
+
+## 🔑 Cấu hình API Key AI
+Bạn có thể cấu hình API Key bằng một trong 2 cách:
+1. **Nhập trực tiếp trên Web UI:** Vào mục **Cài đặt** trên giao diện Web (`http://localhost:8765`), nhập Gemini API Key hoặc OpenAI Key rồi bấm Lưu.
+2. **Cấu hình file `keys.json`:** Mở file `keys.json` ở thư mục gốc và dán key của bạn vào:
+```json
+{
+  "GEMINI_API_KEY": "AIzaSy..."
+}
+```
+
 ---
 
 ## 🛠️ Cấu trúc dự án
+- `setup.cmd`: Script tự động cài đặt môi trường và thư viện 1-click.
 - `icontent/`: Bộ mã nguồn Python chính:
   - `web/`: Backend FastAPI + Frontend HTML/CSS/JS (giao diện web tại `icontent/web/static/`).
   - `download.py`: Module tải video đa nền tảng (tích hợp chữ ký Douyin `x-secsdk-web-signature`).
@@ -32,9 +76,8 @@ K-Tube Studio (App).cmd
   - `render.py`: Module xóa sub gốc và đóng phụ đề động (TikTok style).
 - `tools/`: Các công cụ nhị phân hỗ trợ (FFmpeg).
 - `workspace/`: Nơi lưu trữ video tải về và các dự án dựng video.
-- `config.yaml`: File cấu hình chung của hệ thống.
-- `cookies.txt`: Cookie phiên hỗ trợ tải video Douyin/TikTok.
-- `keys.json`: Lưu trữ các API key AI (Gemini, OpenAI,...).
+- `config.example.yaml`: File cấu hình mẫu của hệ thống.
+- `keys.example.json`: File mẫu lưu trữ API Key AI.
 
 ---
 

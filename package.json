@@ -4,6 +4,7 @@
   "private": true,
   "description": "K-Tube Studio AI Video Production Platform",
   "scripts": {
+    "setup": "setup.cmd",
     "start": "ktube.cmd ui",
     "dev": "ktube.cmd ui",
     "doctor": "ktube.cmd doctor",
