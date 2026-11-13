@@ -1328,7 +1328,64 @@ h1, h2, h3, h4 { letter-spacing: -.012em; }
 .wf-card:hover { border-color: var(--amber-line); }
 .wf-card .btn { position: absolute; top: 8px; right: 8px; }
 .wf-card-t { display: flex; flex-direction: column; gap: 3px; }
-.view-flow { display: flex; flex-direction: column; height: 100%; overflow: hidden; padding: 0; }
+
+/* Dự án trong Quy trình */
+.wf-section-title { display: flex; align-items: center; justify-content: space-between; margin: 30px 0 14px; }
+.wf-section-title h3 { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; margin: 0; color: var(--tx); }
+.wf-section-count { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: var(--s3); color: var(--tx2); font-weight: 500; }
+.wf-project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 14px; }
+.wf-project-card { position: relative; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--s1); transition: border-color .15s, transform .15s, box-shadow .15s; }
+.wf-project-card:hover { border-color: var(--amber-line); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0, 0, 0, .45); }
+.wf-project-thumb-box { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; overflow: hidden; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.wf-project-thumb { width: 100%; height: 100%; object-fit: cover; transition: transform .25s ease; }
+.wf-project-thumb-box:hover .wf-project-thumb { transform: scale(1.04); }
+.wf-project-thumb-empty { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--tx3); background: var(--s2); }
+.wf-project-thumb-empty svg { width: 36px; height: 36px; }
+.wf-project-play-overlay { position: absolute; inset: 0; background: rgba(0, 0, 0, .32); display: flex; align-items: center; justify-content: center; opacity: 0.85; transition: opacity .2s, background .2s; }
+.wf-project-thumb-box:hover .wf-project-play-overlay { opacity: 1; background: rgba(0, 0, 0, .48); }
+.wf-play-circle { width: 44px; height: 44px; border-radius: 50%; background: var(--amber); color: #1a1204; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px rgba(255, 178, 36, .5); transition: transform .15s; }
+.wf-project-thumb-box:hover .wf-play-circle { transform: scale(1.1); }
+.wf-play-circle svg { width: 20px; height: 20px; margin-left: 2px; }
+.wf-badge-tag { position: absolute; top: 8px; left: 8px; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 6px; backdrop-filter: blur(8px); display: inline-flex; align-items: center; gap: 4px; z-index: 2; }
+.wf-badge-done { background: rgba(62, 207, 142, 0.9); color: #0a2918; }
+.wf-badge-running { background: rgba(255, 178, 36, 0.92); color: #1a1204; animation: pulse-wf 1.8s infinite; }
+.wf-badge-draft { background: rgba(100, 116, 139, 0.85); color: #fff; }
+.wf-badge-aspect { position: absolute; bottom: 8px; right: 8px; font-size: 11px; font-weight: 500; padding: 2px 6px; border-radius: 4px; background: rgba(0, 0, 0, .75); color: #e2e8f0; z-index: 2; }
+.wf-project-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.wf-project-title { font-weight: 700; font-size: 14.5px; color: var(--tx); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wf-project-meta { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tx2); }
+.wf-project-actions { display: flex; align-items: center; gap: 6px; margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line); }
+.wf-empty-sub { padding: 22px 16px; text-align: center; border: 1px dashed var(--line2); border-radius: 12px; color: var(--tx3); font-size: 13px; background: rgba(255, 255, 255, .015); }
+.wf-divider { margin: 38px 0 16px; border: 0; border-top: 1px solid var(--line2); }
+@keyframes pulse-wf { 0%, 100% { opacity: 1; } 50% { opacity: 0.65; } }
+
+/* Danh sách kiểu YouTube Studio */
+.yt-table-wrap { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; margin-bottom: 24px; }
+.yt-row { display: flex; align-items: center; gap: 16px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--s1); transition: background .15s, border-color .15s, transform .1s; }
+.yt-row:hover { background: var(--s2); border-color: var(--amber-line); }
+.yt-thumb-box { position: relative; width: 130px; min-width: 130px; height: 74px; border-radius: 6px; overflow: hidden; background: #000; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.yt-thumb { width: 100%; height: 100%; object-fit: cover; transition: transform .2s ease; }
+.yt-thumb-box:hover .yt-thumb { transform: scale(1.05); }
+.yt-play-overlay { position: absolute; inset: 0; background: rgba(0, 0, 0, .35); display: flex; align-items: center; justify-content: center; opacity: 0.75; transition: opacity .15s, background .15s; }
+.yt-thumb-box:hover .yt-play-overlay { opacity: 1; background: rgba(0, 0, 0, .5); }
+.yt-play-circle { width: 32px; height: 32px; border-radius: 50%; background: var(--amber); color: #1a1204; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0, 0, 0, .5); transition: transform .15s; }
+.yt-thumb-box:hover .yt-play-circle { transform: scale(1.1); }
+.yt-play-circle svg { width: 16px; height: 16px; margin-left: 2px; }
+.yt-aspect-badge { position: absolute; bottom: 4px; right: 4px; font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 3px; background: rgba(0, 0, 0, .8); color: #fff; line-height: 1.2; }
+.yt-col-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.yt-title { font-size: 14.5px; font-weight: 600; color: var(--tx); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yt-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--tx2); }
+.yt-col-status { flex-shrink: 0; display: flex; align-items: center; }
+.yt-status-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 500; padding: 3px 9px; border-radius: 5px; }
+.yt-status-done { background: rgba(62, 207, 142, .12); color: var(--ok); border: 1px solid rgba(62, 207, 142, .3); }
+.yt-status-running { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--amber-line); animation: pulse-wf 1.8s infinite; }
+.yt-status-draft { background: rgba(255, 255, 255, .06); color: var(--tx2); border: 1px solid var(--line2); }
+.yt-col-date { font-size: 12px; color: var(--tx3); flex-shrink: 0; min-width: 100px; text-align: right; }
+.yt-col-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: 10px; }
+
+/* Trình sửa quy trình vs Trang danh sách có thể cuộn */
+.view-flow:not(.view-pad) { display: flex; flex-direction: column; height: 100%; overflow: hidden; padding: 0; }
+.main.view-flow.view-pad { display: block; overflow-y: auto !important; height: 100%; min-height: 100%; padding: 34px 40px 64px; }
 .wf-top { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); flex: none; }
 .wf-name { max-width: 360px; font-weight: 700; }
 .wf-runinfo { white-space: nowrap; }
@@ -1731,3 +1788,82 @@ h1, h2, h3, h4 { letter-spacing: -.012em; }
 .check-row { display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1; min-width: 0; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 @media (max-width: 600px) { .grid-2 { grid-template-columns: 1fr; } }
+
+/* Nút & Thanh chuyển nhanh xem quy trình chạy */
+.sy-flow-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0 14px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  transition: all .18s var(--ease);
+}
+.sy-flow-btn.btn-primary {
+  box-shadow: 0 0 12px rgba(255, 178, 36, .45);
+}
+.sy-flow-btn .tally {
+  margin-right: 2px;
+}
+.wf-floating-pill {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(22, 19, 15, 0.95);
+  border: 1px solid var(--amber-line);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), 0 0 16px rgba(255, 178, 36, 0.25);
+  backdrop-filter: blur(12px);
+  padding: 8px 18px;
+  border-radius: 999px;
+  color: var(--tx);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all .2s cubic-bezier(0.34, 1.45, 0.5, 1);
+  cursor: pointer;
+  animation: floatIn 0.3s cubic-bezier(0.34, 1.45, 0.5, 1);
+}
+.wf-floating-pill:hover {
+  background: rgba(35, 29, 21, 0.98);
+  border-color: var(--amber);
+  transform: translateX(-50%) translateY(-2px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.7), 0 0 22px rgba(255, 178, 36, 0.4);
+}
+@keyframes floatIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+  to { opacity: 1; transform: translateX(-50%); }
+}
+
+/* ---- Trang Phim AI (#/film) */
+.view-film { display: flex; flex-direction: column; gap: 18px; overflow-y: auto; }
+.fm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: 10px; }
+.fm-field { display: flex; flex-direction: column; gap: 5px; }
+.fm-idea { resize: vertical; min-height: 76px; }
+.fm-budget { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.fm-budget-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fm-warn { display: flex; align-items: center; gap: 6px; color: var(--warn); }
+.fm-progress { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--amber-line); background: var(--amber-soft); font-size: 13px; }
+.fm-board-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.fm-board-head h2 { margin: 0; font-size: 16px; }
+.fm-shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }
+.fm-shot { display: flex; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--s2); }
+.fm-shot-media { position: relative; flex: none; width: 112px; aspect-ratio: 9 / 14; border-radius: 8px; overflow: hidden; background: #000; border: 1px solid var(--line); }
+.fm-shot-media img, .fm-shot-media video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fm-shot-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.fm-shot-acts { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: auto; }
+.fm-chk { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; margin-right: auto; }
+.fm-list { display: flex; flex-direction: column; gap: 8px; }
+.fm-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--s2); }
+.fm-row.on { border-color: var(--amber-line); background: var(--amber-soft); }
+.fm-row-thumb { flex: none; width: 56px; height: 56px; border-radius: 8px; overflow: hidden; background: var(--s1); display: grid; place-items: center; }
+.fm-row-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.fm-row-meta { flex: 1; min-width: 0; }
+.fm-row-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

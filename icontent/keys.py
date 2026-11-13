@@ -11,9 +11,10 @@ import os
 from .util import ROOT
 
 KEYS_FILE = ROOT / "keys.json"
-ALLOWED = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "GEMINI_API_KEY",
+ALLOWED = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "GEMINI_API_KEY", "XAI_API_KEY",
            "META_MODEL_API_KEY", "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID",      # 3 cái này: tạo ảnh (imagegen.py)
-           "PEXELS_API_KEY", "PIXABAY_API_KEY")      # video nền miễn phí (stock.py)
+           "PEXELS_API_KEY", "PIXABAY_API_KEY",      # video nền miễn phí (stock.py)
+           "FAL_KEY", "REPLICATE_API_TOKEN")      # khớp khẩu hình & chuyển động khuôn mặt (lipsync.py)
 _from_file: set[str] = set()
 
 

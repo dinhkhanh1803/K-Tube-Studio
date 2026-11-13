@@ -259,7 +259,7 @@ def mount(app, st) -> None:
     # ------------------------------------------------------------------ Kể chuyện
     @app.get("/api/story/options")
     def story_options():
-        from .. import imagegen, videogen
+        from .. import imagegen, lipsync, videogen
         from .. import paid as paid_mod
         from .. import stock as stock_mod
         return {
@@ -267,7 +267,8 @@ def mount(app, st) -> None:
             "motions": list(story_mod.MOTIONS), "sub_styles": list(story_mod.SUB_STYLES), "aspects": list(story_mod.SIZES),
             "transitions": [{"id": k, "label": v} for k, v in story_mod.TRANSITIONS.items()], "default_outro": story_mod.DEFAULT_OUTRO,
             "image_ai": imagegen.available(), "image_providers": imagegen.public(),
-            "stock_sources": stock_mod.public(), "video_providers": videogen.public(), "video_res": list(videogen.RESOLUTIONS),
+            "stock_sources": stock_mod.public(), "video_providers": videogen.public(),
+            "lipsync_providers": lipsync.public(), "video_res": list(videogen.RESOLUTIONS),
             "writer_ai": story_mod.writer_ready(st.cfg()), "writer_local": story_mod.writer_is_local(st.cfg()),
             "paid": paid_mod.status(),
         }
@@ -286,12 +287,14 @@ def mount(app, st) -> None:
     @app.post("/api/stories")
     def story_create(body: dict = Body(default={})):
         s = store().create(str(body.get("title") or "")[:120])
-        if body.get("aspect") in story_mod.SIZES or body.get("style") in story_mod.STYLES:
+        if body.get("aspect") in story_mod.SIZES or body.get("style") in story_mod.STYLES or body.get("mode") in ("story", "film"):
             def fn(x):
                 if body.get("aspect") in story_mod.SIZES:
                     x["aspect"] = body["aspect"]
                 if body.get("style") in story_mod.STYLES:
                     x["style"] = body["style"]
+                if body.get("mode") in ("story", "film"):
+                    x["mode"] = body["mode"]
             s = store().update(s["id"], fn)
         return s
 
@@ -582,6 +585,79 @@ def mount(app, st) -> None:
                 release(keys)
         return {"task": tasks.start("animate", job, "AI làm clip")}
 
+    @app.post("/api/stories/{sid}/scenes/{scid}/lipsync")
+    def scene_lipsync(sid: str, scid: str):
+        from .. import lipsync
+        _get(sid)
+        if not lipsync.ready():
+            raise HTTPException(400, "Chưa có key Lip-Sync (fal.ai hoặc Replicate). Dán key trong Cài đặt rồi thử lại.")
+        _paid_ok()
+        cfg = st.cfg()
+        keys = _scene_claim(sid, scid)
+
+        def job(report):
+            report(None, "Chuẩn bị giọng đọc & ảnh khớp khẩu hình")
+            try:
+                return story_mod.lipsync_scene(store(), sid, scid, cfg, report=report)
+            finally:
+                release(keys)
+        return {"task": tasks.start("lipsync", job, "Khớp khẩu hình AI")}
+
+    @app.post("/api/stories/{sid}/lipsync")
+    def story_lipsync_all(sid: str, body: dict = Body(default={})):
+        """Chạy Khớp khẩu hình AI hàng loạt cho danh sách cảnh (hoặc các cảnh có nhân vật chưa có clip)."""
+        from .. import lipsync
+        from ..speech import readable
+        s = _get(sid)
+        if not lipsync.ready():
+            raise HTTPException(400, "Chưa có key Lip-Sync (fal.ai hoặc Replicate). Dán key trong Cài đặt rồi thử lại.")
+        _paid_ok()
+        only_missing = bool(body.get("only_missing", True))
+        req_ids = set(body.get("scene_ids") or [])
+        portrait_only = bool(body.get("portrait_only", False))
+        todo = []
+        for sc in s["scenes"]:
+            if req_ids and sc["id"] not in req_ids:
+                continue
+            if only_missing and sc.get("clip"):
+                continue
+            if not readable(sc.get("text") or ""):
+                continue
+            if not sc.get("image") and not (sc.get("characters") and s.get("characters")):
+                continue
+            if not req_ids and portrait_only and not (sc.get("characters") or []):
+                continue
+            todo.append(sc["id"])
+        if not todo:
+            return {"task": tasks.start("lipsync-all", lambda report: {"done": 0, "failed": 0, "error": ""}, "Khớp khẩu hình các cảnh")}
+        with drawing_lock:
+            if any(k.startswith(f"{sid}:v:") for k in drawing):
+                raise HTTPException(409, "Đang tạo clip cho dự án này, đợi xong rồi thử lại")
+            drawing.add(f"{sid}:v:*")
+        cfg = st.cfg()
+
+        def job(report):
+            done, errors = 0, []
+            try:
+                for k, scid in enumerate(todo):
+                    report(k / len(todo), f"Khớp khẩu hình cảnh {k + 1}/{len(todo)}")
+                    try:
+                        story_mod.lipsync_scene(store(), sid, scid, cfg, report=lambda f, m, k=k: report(None, f"Cảnh {k + 1}/{len(todo)}: {m}"))
+                        done += 1
+                    except KeyError:
+                        continue
+                    except Exception as e:      # noqa: BLE001
+                        errors.append(str(e))
+                        low = str(e).lower()
+                        if "key" in low or "thanh toán" in low or "hạn mức" in low:
+                            break
+            finally:
+                release([f"{sid}:v:*"])
+            if not done and errors:
+                raise RuntimeError(errors[0])
+            return {"done": done, "failed": len(todo) - done, "error": errors[0] if errors else ""}
+        return {"task": tasks.start("lipsync-all", job, "Khớp khẩu hình các cảnh")}
+
     @app.get("/api/stories/{sid}/animate/estimate")
     def story_animate_estimate(sid: str, only_missing: bool = True, scene: str = ""):
         from .. import videogen
@@ -769,6 +845,40 @@ def mount(app, st) -> None:
         if os.name == "nt":
             subprocess.Popen(["explorer", "/select,", str(f)])      # noqa: S603, S607
         return {"ok": True}
+
+    @app.post("/api/stories/{sid}/workflow")
+    def story_workflow(sid: str):
+        s = _get(sid)
+        ws = wstore()
+        # 1. Tìm quy trình đã có chứa story này
+        for item in ws.list():
+            try:
+                w = ws.get(item["id"])
+                memo = w.get("memo") or {}
+                for v in memo.values():
+                    if isinstance(v, dict) and v.get("sid") == sid:
+                        return {"id": w["id"], "name": w.get("name"), "created": False}
+            except Exception:
+                continue
+        # 2. Nếu chưa có, tự tạo một quy trình mới cho câu chuyện này
+        title = s.get("title") or "Quy trình câu chuyện"
+        w = wf_mod.from_template("ai_story", f"Quy trình: {title}")
+        w.setdefault("memo", {})["k2"] = {"key": "manual", "sid": sid}
+        for n in w.get("nodes", []):
+            if n["id"] == "k1":
+                n["params"]["text"] = title
+            elif n["id"] == "k2":
+                n["params"]["aspect"] = s.get("aspect") or "9:16"
+                n["params"]["style"] = s.get("style") or "anime"
+            elif n["id"] in ("k3", "k4"):
+                n["params"]["provider"] = s.get("image_provider") or "openai"
+            elif n["id"] == "k5":
+                voice = s.get("voice") or {}
+                n["params"]["engine"] = voice.get("engine") or "vieneu"
+                n["params"]["voice"] = voice.get("voice") or ""
+                n["params"]["speed"] = voice.get("speed") or 1.0
+        saved = ws.write(w)
+        return {"id": saved["id"], "name": saved.get("name"), "created": True}
 
     # ------------------------------------------------------------------ Trang chủ
     gpu_cache: dict[str, str] = {}

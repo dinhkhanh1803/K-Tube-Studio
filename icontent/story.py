@@ -89,6 +89,8 @@ def merge_story(current: dict, incoming: dict) -> dict:
     nên lưu câu chuyện trong lúc Gemini đang vẽ không làm mất ảnh vừa vẽ xong."""
     out = dict(current)
     out["title"] = _clean_text(incoming.get("title"), 120) or current.get("title") or "Câu chuyện"
+    if incoming.get("mode") in ("story", "film"):
+        out["mode"] = incoming["mode"]
     if incoming.get("aspect") in SIZES:
         out["aspect"] = incoming["aspect"]
     if incoming.get("style") in STYLES:
@@ -222,7 +224,7 @@ class StoryStore:
                         continue
                     cover = next((x["image"] for x in s.get("scenes") or [] if x.get("image")), "")
                     out.append({"id": s["id"], "title": s.get("title"), "updated": s.get("updated"), "scenes": len(s.get("scenes") or []),
-                                "aspect": s.get("aspect"), "cover": cover, "output": s.get("output") or ""})
+                                "aspect": s.get("aspect"), "cover": cover, "output": s.get("output") or "", "mode": s.get("mode") or "story"})
         return sorted(out, key=lambda x: -(x.get("updated") or 0))
 
     def get(self, sid: str) -> dict:
@@ -313,15 +315,14 @@ SCRIPT_SCHEMA = {
     "additionalProperties": False,
 }
 
-WRITER_SYSTEM = """You write short narrated story videos for {lang} social media (TikTok, YouTube Shorts, Facebook Reels).
+WRITER_SYSTEM = """You write short narrated story videos and realistic AI motion films for {lang} social media (TikTok, YouTube Shorts, Facebook Reels).
 Return JSON only, following the schema.
 - title: catchy {lang} title.
 - characters: every recurring character. description is in English and purely visual so an illustrator can draw the same person every time:
   age, gender, body, face, hair style and colour, clothes with colours, one or two distinctive details. No personality words.
-- scenes: in story order. Each scene is 1 to 3 sentences of narration.
-  text: natural spoken {lang}{diacritics}, as a storyteller would say it aloud. No stage directions, no emoji, no speaker labels.
-  prompt: English description of ONE still image for that moment: setting, action, camera framing, lighting, mood. Name the characters exactly
-  as in the characters list. Never ask for text, captions or speech bubbles in the image.
+- scenes: in story order. Each scene MUST be concise (1 to 2 short sentences of narration, about 3 to 7 seconds spoken) so visuals match the voice dynamically without long static holds.
+  text: natural spoken {lang}{diacritics}, as a storyteller or character would say it aloud. No stage directions, no emoji, no speaker labels.
+  prompt: English description of that EXACT moment so image and AI video match every word spoken in `text`: exact character action, facial emotion, key object/prop mentioned in `text`, setting, natural motion cues (wind, gesture, gaze, lighting shift), camera framing. Name characters exactly as in the characters list. Never ask for text, captions or speech bubbles.
   broll: 2 to 4 plain English words to search free stock footage sites (Pexels, Pixabay) for a real video clip that fits this moment,
   e.g. "rainy city street night", "old man fishing lake". Concrete things and places only, no character names, no art style words.
   characters: names of characters visible in that image (subset of the list, at most 3).
@@ -804,6 +805,53 @@ def animate_scene(store: StoryStore, sid: str, scene_id: str, cfg, report=None, 
         out.unlink(missing_ok=True)
 
 
+def lipsync_scene(store: StoryStore, sid: str, scene_id: str, cfg=None, report=None, check=None) -> str:
+    """Tạo clip nhân vật nói khớp khẩu hình (lip-sync) 1:1 với file giọng đọc của cảnh."""
+    from . import lipsync
+    from .stock import normalize
+    s = store.get(sid)
+    s["_folder"] = store.folder(sid)
+    sc = next((x for x in s["scenes"] if x["id"] == scene_id), None)
+    if sc is None:
+        raise KeyError("Không có cảnh này")
+    img = store.file(sid, "img", sc["image"]) if sc.get("image") else None
+    img = img if img and img.is_file() else None
+    if img is None:
+        refs = scene_prompt(s, sc)[1]
+        img = refs[0] if refs else None
+    if img is None or not img.is_file():
+        raise ValueError("Cảnh chưa có ảnh khuôn mặt nhân vật để khớp khẩu hình")
+    if report:
+        report(0.1, "Tạo file giọng đọc cho cảnh")
+    voice = narrate_scene(store, sid, s, sc)
+    if not voice["wav"]:
+        raise ValueError("Cảnh chưa có lời dẫn để khớp khẩu hình")
+    prov = lipsync.pick()
+    if not prov:
+        raise lipsync.LipSyncError("Chưa có key Lip-Sync (fal.ai hoặc Replicate). Dán key trong Cài đặt.")
+    info = lipsync.PROVIDERS[prov]
+    if report:
+        report(0.3, f"Gửi ảnh và giọng cho {info['name']}")
+    data = lipsync.generate(img, voice["wav"], provider=prov,
+                            report=(lambda m: report(None, m)) if report else None, check_cancel=check)
+    folder = store.folder(sid) / "clip"
+    folder.mkdir(parents=True, exist_ok=True)
+    raw = folder / f"ls_{scene_id}_{uuid.uuid4().hex[:6]}.raw.mp4"
+    out = raw.with_name(raw.name.replace(".raw", ""))
+    raw.write_bytes(data)
+    try:
+        dur = normalize(raw, out)
+    finally:
+        raw.unlink(missing_ok=True)
+    meta = {"src": "lipsync", "id": uuid.uuid4().hex[:8], "provider": info["name"], "duration": round(dur, 3),
+            "license": f"Khớp khẩu hình AI ({info['name']})", "prompt": (sc.get("text") or "")[:200],
+            "cost": round(float(info.get("price_per_scene", 0.01)), 4)}
+    try:
+        return add_scene_clip(store, sid, scene_id, out, meta)
+    finally:
+        out.unlink(missing_ok=True)
+
+
 def credits(story: dict) -> list[dict]:
     """Nguồn của các clip đang dùng (để ghi công, và làm bằng chứng khi bị khiếu nại bản quyền)."""
     out = []
@@ -819,6 +867,8 @@ def credits_text(story: dict) -> str:
     for c in credits(story):
         if c.get("src") == "ai":
             lines.append(f"Cảnh {c['scene']}: clip tạo bằng AI ({c.get('provider') or 'AI'})")
+        elif c.get("src") == "lipsync":
+            lines.append(f"Cảnh {c['scene']}: clip khớp khẩu hình AI ({c.get('provider') or 'Lip-Sync'})")
         else:
             who = f" của {c['author']}" if c.get("author") else ""
             at = f" (đoạn từ giây {c['start']:g})" if c.get("start") else ""
@@ -863,37 +913,40 @@ def _motion_expr(kind: str, frames: int) -> tuple[str, str, str]:
     return "1", "0", "0"
 
 
-CLIP_STRETCH = 1.3      # clip ngắn hơn cảnh tới 30% thì làm chậm lại cho vừa (mắt không nhận ra), dài hơn nữa thì lặp lại
+CLIP_STRETCH = 1.5      # clip ngắn hơn cảnh tới 50% thì làm chậm lại cho vừa, dài hơn nữa thì lặp lại
 
 
-def _clip_chain(idx: int, W: int, H: int, fit: str, frames: int, clip_dur: float, dim: bool = False) -> str:
-    """Cảnh dùng clip: phủ kín khung (hoặc nền mờ), đúng số khung của cảnh. Clip hơi ngắn thì chậm lại, ngắn nhiều thì đã được lặp từ đầu vào."""
+def _clip_chain(idx: int, W: int, H: int, fit: str, frames: int, clip_dur: float, dim: bool = False,
+                exact: bool = False, lead: float = 0.0) -> str:
+    """Cảnh dùng clip: phủ kín khung (hoặc nền mờ), đúng số khung của cảnh. Clip Lip-Sync giữ tốc độ 1:1 và đệm khung đầu/cuối để khớp tiếng."""
     need = frames / FPS
-    slow = need / clip_dur if clip_dur and clip_dur < need <= clip_dur * CLIP_STRETCH else 1.0
+    slow = 1.0 if exact else (need / clip_dur if clip_dur and clip_dur < need <= clip_dur * CLIP_STRETCH else 1.0)
     pts = f"setpts={slow:.4f}*(PTS-STARTPTS)," if slow > 1.0 else "setpts=PTS-STARTPTS,"
+    lead_f = max(0, int(round(lead * FPS))) if exact else 0
+    pad = f",tpad=start={lead_f}:start_mode=clone:stop=-1:stop_mode=clone" if exact else ""
     if fit == "blur":
-        body = (f"[{idx}:v]{pts}fps={FPS},split=2[b{idx}][f{idx}];[b{idx}]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},boxblur=40:2[bb{idx}];"
+        body = (f"[{idx}:v]{pts}fps={FPS}{pad},split=2[b{idx}][f{idx}];[b{idx}]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},boxblur=40:2[bb{idx}];"
                 f"[f{idx}]scale={W}:{H}:force_original_aspect_ratio=decrease[ff{idx}];[bb{idx}][ff{idx}]overlay=(W-w)/2:(H-h)/2")
     else:
-        body = f"[{idx}:v]{pts}fps={FPS},scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,crop={W}:{H}"
+        body = f"[{idx}:v]{pts}fps={FPS}{pad},scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,crop={W}:{H}"
     if dim:
         body += ",boxblur=30:2,eq=brightness=-0.16:saturation=0.75"
     return f"{body},setsar=1,format=yuv420p,trim=end_frame={frames},setpts=PTS-STARTPTS[v{idx}]"
 
 
-def _clip_input(rel: str, frames: int, clip_dur: float) -> list:
-    """Clip ngắn hơn nhiều so với cảnh: lặp lại từ đầu (đầu vào lặp vô hạn, cắt đúng số khung trong bộ lọc)."""
+def _clip_input(rel: str, frames: int, clip_dur: float, exact: bool = False) -> list:
+    """Clip ngắn hơn nhiều so với cảnh: lặp lại từ đầu (đầu vào lặp vô hạn, cắt đúng số khung trong bộ lọc). Clip Lip-Sync không lặp."""
     need = frames / FPS
-    loop = clip_dur and need > clip_dur * CLIP_STRETCH
+    loop = False if exact else bool(clip_dur and need > clip_dur * CLIP_STRETCH)
     return (["-stream_loop", "-1"] if loop else []) + ["-i", rel]
 
 
-def _seg_clip(store_folder: Path, sg: dict) -> tuple[str, float] | None:
+def _seg_clip(store_folder: Path, sg: dict) -> tuple[str, float, str] | None:
     c = sg.get("clip")
     if not c:
         return None
     f = store_folder / "clip" / c["name"]
-    return (f"clip/{c['name']}", float(c.get("duration") or 0)) if f.is_file() else None
+    return (f"clip/{c['name']}", float(c.get("duration") or 0), str(c.get("src") or "")) if f.is_file() else None
 
 
 def _scene_motion(scene: dict, i: int) -> str:
@@ -916,39 +969,48 @@ def _image_chain(idx: int, W: int, H: int, fit: str, motion: str, frames: int, d
             f"trim=end_frame={frames},setpts=PTS-STARTPTS,format=yuv420p[v{idx}]")
 
 
-def narrate(store: StoryStore, sid: str, story: dict, on_step=None) -> list[dict]:
-    """Lời dẫn từng cảnh (có cache). -> [{wav, dur, timings}] theo thứ tự cảnh; cảnh không có lời thì wav None."""
-    from .speech import speech_key, synthesize
+def _voice_cfg(story: dict) -> tuple[str, str, float]:
     v = story.get("voice") or {}
     engine, voice, speed = v.get("engine") or "vieneu", v.get("voice") or "", float(v.get("speed") or 1.0)
     lang = v.get("lang") or "vi"
     if engine == "vox" or (lang != "vi" and engine == "vieneu"):      # VieNeu chỉ đọc tiếng Việt (giống voice.engine_for)
         from .voxtts import ready as vox_ready
         engine = "vox" if vox_ready() else "edge" if lang != "vi" else "vieneu"
+    return engine, voice, speed
+
+
+def narrate_scene(store: StoryStore, sid: str, story: dict, sc: dict) -> dict:
+    """Đọc và cache lời dẫn của một cảnh. -> {wav, dur, timings}."""
+    from .speech import readable, speech_key, synthesize
+    text = (sc.get("text") or "").strip()
+    if not readable(text):
+        return SILENT
+    engine, voice, speed = _voice_cfg(story)
     audio_dir = store.folder(sid) / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
-    out = []
-    from .speech import readable as _readable
-    todo = [sc for sc in story["scenes"] if _readable(sc.get("text", ""))]
-    done = 0
+    wav = audio_dir / f"{sc['id']}_{speech_key(text, engine, voice, speed)}.wav"
+    meta = wav.with_suffix(".json")
+    if wav.exists() and meta.exists():
+        timings = [tuple(t) for t in json.loads(meta.read_text(encoding="utf-8"))["timings"]]
+    else:
+        timings = synthesize(text, wav, engine=engine, voice=voice, speed=speed, cache=store.root / ".speech_cache", report=False)
+    data, sr = read_wav(wav)
+    return {"wav": wav, "dur": data.shape[0] / sr, "timings": timings}
+
+
+def narrate(store: StoryStore, sid: str, story: dict, on_step=None) -> list[dict]:
+    """Lời dẫn từng cảnh (có cache). -> [{wav, dur, timings}] theo thứ tự cảnh; cảnh không có lời thì wav None."""
     from .speech import readable
+    todo = [sc for sc in story["scenes"] if readable(sc.get("text", ""))]
+    out, done = [], 0
     for sc in story["scenes"]:
         check_cancel()
-        text = sc.get("text", "").strip()
-        if not readable(text):      # trống, hoặc chỉ "..." "***" biểu tượng cảm xúc: cảnh im lặng
-            out.append({"wav": None, "dur": 0.0, "timings": []})
-            continue
-        wav = audio_dir / f"{sc['id']}_{speech_key(text, engine, voice, speed)}.wav"
-        meta = wav.with_suffix(".json")
-        if wav.exists() and meta.exists():
-            timings = [tuple(t) for t in json.loads(meta.read_text(encoding="utf-8"))["timings"]]
-        else:
-            timings = synthesize(text, wav, engine=engine, voice=voice, speed=speed, cache=store.root / ".speech_cache", report=False)
-        data, sr = read_wav(wav)
-        out.append({"wav": wav, "dur": data.shape[0] / sr, "timings": timings})
-        done += 1
-        if on_step:
-            on_step(done, len(todo))
+        res = narrate_scene(store, sid, story, sc)
+        out.append(res)
+        if res["wav"]:
+            done += 1
+            if on_step:
+                on_step(done, len(todo))
     return out
 
 
@@ -969,7 +1031,7 @@ def segments(story: dict, voices: list[dict]) -> list[dict]:
         clip = None
         if sc.get("clip"):
             m = (sc.get("clip_meta") or {}).get(sc["clip"]) or {}
-            clip = {"name": sc["clip"], "duration": float(m.get("duration") or 0)}
+            clip = {"name": sc["clip"], "duration": float(m.get("duration") or 0), "src": str(m.get("src") or "")}
         out.append({"kind": "scene", "id": sc.get("id"), "image": sc.get("image"), "voice": v, "min": _duration(sc.get("duration")),
                     "trans": sc.get("transition") or trans, "motion": _scene_motion(sc, i), "clip": clip})
     if outro.get("enabled") and scenes:
@@ -1144,8 +1206,11 @@ def render_story(store: StoryStore, sid: str, cfg, output_dir: Path) -> Path:
     for i, (sg, tm) in enumerate(zip(segs, times)):
         cl = _seg_clip(folder, sg)
         if cl:
-            inputs += _clip_input(cl[0], tm["frames"], cl[1])
-            chains.append(_clip_chain(i, W, H, story.get("fit") or "cover", tm["frames"], cl[1], dim=sg["kind"] != "scene"))
+            exact = cl[2] == "lipsync"
+            lead_s = max(0.0, tm["voice_at"] - tm["start"])
+            inputs += _clip_input(cl[0], tm["frames"], cl[1], exact=exact)
+            chains.append(_clip_chain(i, W, H, story.get("fit") or "cover", tm["frames"], cl[1],
+                                      dim=sg["kind"] != "scene", exact=exact, lead=lead_s))
         else:
             inputs += ["-i", f"img/{sg['image']}"]
             chains.append(_image_chain(i, W, H, story.get("fit") or "cover", sg["motion"], tm["frames"], dim=sg["kind"] != "scene"))
@@ -1250,8 +1315,10 @@ def _render_clip(folder: Path, sg: dict, tm: dict, W: int, H: int, fit: str, enc
     dur = tm["frames"] / FPS
     cl = _seg_clip(folder, sg)
     if cl:
-        inputs = _clip_input(cl[0], tm["frames"], cl[1])
-        graph = _clip_chain(0, W, H, fit, tm["frames"], cl[1], dim=sg["kind"] != "scene")
+        exact = cl[2] == "lipsync"
+        lead_s = max(0.0, tm["voice_at"] - tm["start"])
+        inputs = _clip_input(cl[0], tm["frames"], cl[1], exact=exact)
+        graph = _clip_chain(0, W, H, fit, tm["frames"], cl[1], dim=sg["kind"] != "scene", exact=exact, lead=lead_s)
     else:
         inputs = ["-i", f"img/{sg['image']}"]
         graph = _image_chain(0, W, H, fit, sg["motion"], tm["frames"], dim=sg["kind"] != "scene")

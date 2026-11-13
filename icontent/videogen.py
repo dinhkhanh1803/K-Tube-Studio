@@ -276,13 +276,13 @@ def generate(prompt: str, image: Path | None = None, refs: list[Path] | None = N
 
 
 def scene_prompt(story: dict, scene: dict, from_image: bool) -> str:
-    """Lời nhắn cho một cảnh. Từ ảnh: tả chuyển động, giữ nguyên nhân vật, bối cảnh trong ảnh. Không lời thoại, không chữ: lời dẫn và phụ đề là của iContent."""
+    """Lời nhắn cho một cảnh. Từ ảnh: tả chuyển động vật lý tự nhiên, giữ nguyên nhân vật, bối cảnh trong ảnh. Không lời thoại, không chữ."""
     what = scene.get("prompt") or scene.get("text") or ""
     shape = "vertical 9:16" if story.get("aspect") == "9:16" else "horizontal 16:9"
     if from_image:
-        head = ("Animate this image into a short cinematic shot. Keep the characters, faces, clothes, art style and setting exactly as in the image. "
-                "Natural subtle motion of the characters and the environment with a slow smooth camera move.")
+        head = ("Animate this image into a realistic cinematic video shot. Keep the characters, faces, clothes, art style and setting strictly consistent with the image. "
+                "Add natural physical motion: hair and clothes moving gently, natural eye blinking, breathing, fluid body action matching the scene, dynamic lighting, and a smooth cinematic camera movement.")
     else:
-        head = f"A short cinematic {shape} shot for one scene of a story."
-    return " ".join(x for x in (head, f"Scene: {what}" if what else "", "No dialogue, no speech, no narration, no music; only soft natural ambient sound.",
+        head = f"A realistic cinematic {shape} video shot with fluid physical motion and natural lighting for one scene of a story."
+    return " ".join(x for x in (head, f"Action & Scene: {what}" if what else "", "No dialogue, no speech, no narration, no music; only soft natural ambient sound.",
                                 "No text, captions, subtitles, logos or watermarks on screen.") if x)

@@ -316,13 +316,14 @@ async function storyEditor(main, alive, sid, opts) {
       class: 'sy-img', title: nVar > 1 ? 'Chọn lại một trong các bản đã có (ảnh và clip)' : sc.clip ? 'Clip của cảnh' : 'Ảnh của cảnh', onclick: () => variants(sc),
       onmouseenter: () => { if (img.tagName === 'VIDEO') img.play().catch(() => {}); }, onmouseleave: () => { if (img.tagName === 'VIDEO') { img.pause(); } },
     }, img,
-      sc.clip ? el('span', { class: 'sy-badge sy-badge-clip', title: cm ? (cm.src === 'ai' ? 'Clip tạo bằng AI' : `${cm.title || 'Video'}${cm.author ? ' của ' + cm.author : ''} (${cm.source_name || cm.src}, ${cm.license || ''})`) : 'Video' },
-        icon('film'), cm && cm.src === 'ai' ? 'AI' : cm ? (SRC_SHORT[cm.src] || 'Video') : 'Video') : null,
+      sc.clip ? el('span', { class: 'sy-badge sy-badge-clip', title: cm ? (cm.src === 'lipsync' ? 'Clip khớp khẩu hình AI' : cm.src === 'ai' ? 'Clip tạo bằng AI' : `${cm.title || 'Video'}${cm.author ? ' của ' + cm.author : ''} (${cm.source_name || cm.src}, ${cm.license || ''})`) : 'Video' },
+        icon('film'), cm && cm.src === 'lipsync' ? 'Lip-Sync' : cm && cm.src === 'ai' ? 'AI' : cm ? (SRC_SHORT[cm.src] || 'Video') : 'Video') : null,
       nVar > 1 ? el('span', { class: 'sy-badge', text: `${nVar} bản` }) : null);
     const inFlight = drawingOf(sid).has(sc.id) || drawingOf(sid).has('*');
     const clipBusy = clippingOf(sid).has(sc.id) || clippingOf(sid).has('*');
     if (inFlight || clipBusy) imgBox.classList.add('is-busy');
     const vp = (opts.video_providers || [])[0];
+    const lsp = (opts.lipsync_providers || []).find((p) => p.usable) || (opts.lipsync_providers || []).find((p) => p.ready) || (opts.lipsync_providers || [])[0];
     const stockBtn = el('button', {
       class: 'btn btn-xs', disabled: clipBusy, title: 'Tìm video quay thật miễn phí (Pexels, Pixabay, Wikimedia) cho cảnh này',
       onclick: () => busy(stockBtn, async () => { await ensureIds(); await saveNow(); stockPicker(sc); }),
@@ -339,6 +340,18 @@ async function storyEditor(main, alive, sid, opts) {
         await runClipTask(sc.id, task, imgBox, aiClipBtn);
       }),
     }, icon('film'), 'AI làm clip');
+    const lipsyncBtn = el('button', {
+      class: 'btn btn-xs' + (lsp && lsp.usable ? '' : ' btn-ghost'), disabled: clipBusy || !(lsp && lsp.usable),
+      title: lsp && lsp.usable ? `Khớp khẩu hình nhân vật 1:1 theo giọng đọc (${lsp.name}, ~250đ/cảnh)`
+        : lsp && lsp.ready ? 'Trả phí: đang tắt tính năng trả phí (Cài đặt, mục Chi phí)' : 'Cần dán key Fal.ai hoặc Replicate (Cài đặt, mục Video nền và clip AI)',
+      onclick: () => busy(lipsyncBtn, async () => {
+        if (!sc.text.trim()) { toast('Cảnh chưa có lời dẫn để khớp khẩu hình', 'info'); return; }
+        await ensureIds(); await saveNow();
+        if (!(await confirmDialog(`Khớp khẩu hình cho cảnh ${i + 1}?`, `Dùng ${lsp.name}: lấy giọng đọc thật + ảnh nhân vật để nhép môi và chớp mắt khớp 1:1 (khoảng 0,01 USD ≈ 250đ).`, { okText: 'Khớp khẩu hình' }))) return;
+        const { task } = await api('POST', `/api/stories/${enc(sid)}/scenes/${enc(sc.id)}/lipsync`);
+        await runClipTask(sc.id, task, imgBox, lipsyncBtn);
+      }),
+    }, icon('mic'), 'Khớp khẩu hình');
     const imageBack = sc.clip ? el('button', {
       class: 'btn btn-xs btn-ghost', title: 'Cảnh dùng lại ảnh có máy quay chuyển động (clip vẫn giữ, chọn lại được)',
       onclick: () => busy(imageBack, async () => { syncManaged(await api('POST', `/api/stories/${enc(sid)}/scenes/${enc(sc.id)}/clip/use`, { name: '' })); }),
@@ -428,7 +441,7 @@ async function storyEditor(main, alive, sid, opts) {
       if (f && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'INPUT') { e.preventDefault(); busy(null, () => pasteImage(sc, f)); }
     } },
       el('div', { class: 'sy-scene-l' }, el('div', { class: 'sy-num mono', text: String(i + 1) }), imgBox, el('div', { class: 'sy-img-acts' }, genBtn, upBtn, libBtn),
-        el('div', { class: 'sy-img-acts' }, stockBtn, aiClipBtn), imageBack ? el('div', { class: 'sy-img-acts' }, imageBack) : null,
+        el('div', { class: 'sy-img-acts' }, stockBtn, aiClipBtn, lipsyncBtn), imageBack ? el('div', { class: 'sy-img-acts' }, imageBack) : null,
         el('div', { class: 'sy-img-acts' }, copyBtn, pasteBtn, el('span', { class: 'dim small sy-free', text: 'Vẽ ngoài, dán vào' }))),
       el('div', { class: 'sy-scene-r' }, text,
         el('details', { class: 'sy-prompt', open: !!sc.prompt }, el('summary', { text: 'Mô tả hình cho AI' }), prompt, broll),
@@ -458,10 +471,10 @@ async function storyEditor(main, alive, sid, opts) {
         },
       }, icon('trash'));
       return el('div', { class: 'sy-variant-wrap' }, el('button', {
-        class: 'sy-variant' + (name === sc.clip ? ' on' : ''), title: meta.src === 'ai' ? 'Clip AI' : `${meta.title || ''} ${meta.author ? '· ' + meta.author : ''}`,
+        class: 'sy-variant' + (name === sc.clip ? ' on' : ''), title: meta.src === 'lipsync' ? 'Clip khớp khẩu hình AI' : meta.src === 'ai' ? 'Clip AI' : `${meta.title || ''} ${meta.author ? '· ' + meta.author : ''}`,
         onmouseenter: () => v.play().catch(() => {}), onmouseleave: () => v.pause(),
         onclick: async () => { syncManaged(await api('POST', `/api/stories/${enc(sid)}/scenes/${enc(sc.id)}/clip/use`, { name })); m.close(); },
-      }, v, el('span', { class: 'sy-badge sy-badge-clip' }, icon('film'), meta.src === 'ai' ? 'AI' : (SRC_SHORT[meta.src] || 'Video'))), del);
+      }, v, el('span', { class: 'sy-badge sy-badge-clip' }, icon('film'), meta.src === 'lipsync' ? 'Lip-Sync' : meta.src === 'ai' ? 'AI' : (SRC_SHORT[meta.src] || 'Video'))), del);
     };
     const m = openModal([
       modalHead('image', 'Các bản của cảnh', () => m),
@@ -800,11 +813,67 @@ async function storyEditor(main, alive, sid, opts) {
   const timer = setInterval(paintEstimate, 2000);
   cleanups.push(() => clearInterval(timer));
 
+  // Nút chuyển nhanh sang xem Quy trình dựng của đúng dự án này
+  async function getWorkflowForStory() {
+    const { items } = await api('GET', '/api/workflows');
+    const title = story.title || '';
+    // 1. Tìm quy trình có tên khớp với tên câu chuyện
+    for (const it of items || []) {
+      if (it.name && title && (it.name.includes(title.slice(0, 25)) || title.includes(it.name.replace('Quy trình: ', '').slice(0, 25)))) {
+        return it.id;
+      }
+    }
+    // 2. Tìm quy trình có kết quả chạy chứa sid của story này
+    for (const it of items || []) {
+      try {
+        const detail = await api('GET', `/api/workflows/${enc(it.id)}`);
+        const nodes = (detail.run && detail.run.nodes) || {};
+        if (Object.values(nodes).some((n) => n.preview && n.preview.story === sid)) {
+          return it.id;
+        }
+      } catch (_) {}
+    }
+    // 3. Nếu chưa có quy trình riêng, tự động tạo ngay một quy trình cho đúng câu chuyện này
+    const newWf = await api('POST', '/api/workflows', {
+      template: 'ai_story',
+      name: title ? `Quy trình: ${title}` : 'Quy trình câu chuyện',
+    });
+    if (newWf && newWf.id) {
+      try {
+        const wfData = await api('GET', `/api/workflows/${enc(newWf.id)}`);
+        (wfData.nodes || []).forEach((n) => {
+          if (n.id === 'k1') n.params.text = title;
+          if (n.id === 'k2') { n.params.aspect = story.aspect || '9:16'; n.params.style = story.style || 'anime'; }
+          if (n.id === 'k3' || n.id === 'k4') n.params.provider = story.image_provider || 'openai';
+        });
+        await api('PUT', `/api/workflows/${enc(newWf.id)}`, wfData);
+      } catch (_) {}
+      return newWf.id;
+    }
+    return null;
+  }
+
+  const flowBtn = el('button', {
+    type: 'button',
+    class: 'btn btn-accent sy-flow-btn',
+    title: 'Xem sơ đồ khối quy trình dựng của câu chuyện này',
+    onclick: () => busy(flowBtn, async () => {
+      try {
+        const wid = await getWorkflowForStory();
+        if (wid) {
+          location.hash = `#/flow/${enc(wid)}`;
+        }
+      } catch (e) {
+        toast('Không mở được quy trình: ' + e.message, 'error');
+      }
+    }),
+  }, icon('layers'), el('span', { text: 'Xem quy trình dựng' }));
+
   main.classList.add('view-story-edit');
   main.append(
     el('div', { class: 'sy-head' },
       el('a', { class: 'btn btn-icon btn-ghost', href: '#/story', title: 'Về danh sách', 'aria-label': 'Về danh sách' }, icon('back')),
-      titleInp, aspectSel, styleSel, provSel, el('span', { class: 'grow' }), estimate, drawAllBtn, editBtn, renderBtn),
+      titleInp, aspectSel, styleSel, provSel, el('span', { class: 'grow' }), flowBtn, estimate, drawAllBtn, editBtn, renderBtn),
     runbar,
     el('div', { class: 'sy-body' },
       sceneBox,

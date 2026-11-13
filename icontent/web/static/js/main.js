@@ -14,6 +14,7 @@ import { viewWorkflow } from './workflow.js';
 import { viewHome } from './dashboard.js';
 import { viewEditor } from './editor.js';
 import { viewStory } from './story.js';
+import { viewFilm } from './film.js';
 import { viewVoiceover } from './voiceover.js';
 import { viewLibrary } from './library.js';
 import { openOnboarding } from './onboard.js';
@@ -21,8 +22,8 @@ import { viewMerge } from './merge.js';
 import { viewSettings } from './settings.js';
 import { openShortcuts, viewStudio } from './studio.js';
 
-const VIEWS = { home: viewHome, new: viewNew, discover: viewDiscover, library: viewLibrary, image: viewImageLab, thumb: viewThumbnail, flow: viewWorkflow, editor: viewEditor, story: viewStory, voice: viewVoiceover, merge: viewMerge, studio: viewStudio, settings: viewSettings, about: viewAbout };
-const TITLES = { home: 'Trang chủ', new: 'Dịch video', discover: 'Khám phá', library: 'Thư viện', image: 'Sửa ảnh', thumb: 'Thumbnail', flow: 'Quy trình', editor: 'Trình dựng', story: 'Kể chuyện', voice: 'Đọc văn bản', merge: 'Ghép video', studio: 'Studio', settings: 'Cài đặt', about: 'Giới thiệu' };
+const VIEWS = { home: viewHome, new: viewNew, discover: viewDiscover, library: viewLibrary, image: viewImageLab, thumb: viewThumbnail, flow: viewWorkflow, film: viewFilm, editor: viewEditor, story: viewStory, voice: viewVoiceover, merge: viewMerge, studio: viewStudio, settings: viewSettings, about: viewAbout };
+const TITLES = { home: 'Trang chủ', new: 'Dịch video', discover: 'Khám phá', library: 'Thư viện', image: 'Sửa ảnh', thumb: 'Thumbnail', flow: 'Quy trình', film: 'Phim AI', editor: 'Trình dựng', story: 'Kể chuyện', voice: 'Đọc văn bản', merge: 'Ghép video', studio: 'Studio', settings: 'Cài đặt', about: 'Giới thiệu' };
 let routeTok = 0, cleanup = null, currentHash = '', ignoreHash = false;
 
 function parseHash() {
@@ -40,6 +41,10 @@ function setNav(name) {
     if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
   $('#nav-studio').href = S.lastStudio ? '#/studio/' + enc(S.lastStudio) : '#/studio';
+  const navFlow = $('#nav-flow');
+  if (navFlow) {
+    navFlow.href = '#/flow';
+  }
 }
 async function route() {
   const tok = ++routeTok;
@@ -116,6 +121,7 @@ async function openPalette() {
     { label: 'Ghép nhiều video', icon: 'merge', run: go('#/merge') },
     { label: 'Trình dựng tự do', icon: 'scissors', run: go('#/editor') },
     { label: 'Quy trình kéo thả: ý tưởng thành video', icon: 'layers', run: go('#/flow') },
+    { label: 'Tạo phim AI chuyển động & khớp khẩu hình', icon: 'film', run: go('#/film') },
     { label: 'Video kể chuyện từ ảnh', icon: 'film', run: go('#/story') },
     { label: 'Đọc văn bản thành giọng nói', icon: 'mic', run: go('#/voice') },
     { label: 'Cài đặt', icon: 'sliders', run: go('#/settings') },
@@ -178,4 +184,34 @@ async function boot() {
   pollQueue();
   setInterval(loadStatus, 60000);
 }
+
+// Giám sát quy trình đang chạy toàn cục và hiển thị thanh chuyển nhanh
+async function checkGlobalWorkflow() {
+  const container = $('#wf-floating-container');
+  if (!container) return;
+  if (location.hash.startsWith('#/flow/')) {
+    container.replaceChildren();
+    return;
+  }
+  try {
+    const { items } = await api('GET', '/api/workflows');
+    const running = (items || []).find((w) => w.state === 'running');
+    if (running) {
+      if (!container.querySelector('.wf-floating-pill')) {
+        const pill = el('a', {
+          class: 'wf-floating-pill',
+          href: `#/flow/${enc(running.id)}`,
+          title: `Quy trình "${running.name}" đang chạy: bấm để xem tiến độ các khối`,
+        }, el('span', { class: 'tally' }), icon('layers'), el('span', {}, 'Quy trình ', el('b', { text: `"${running.name}"` }), ' đang chạy · Bấm để xem ➔'));
+        container.replaceChildren(pill);
+      }
+    } else {
+      container.replaceChildren();
+    }
+  } catch (_) {}
+}
+setInterval(checkGlobalWorkflow, 2500);
+window.addEventListener('hashchange', checkGlobalWorkflow);
+setTimeout(checkGlobalWorkflow, 800);
+
 boot();

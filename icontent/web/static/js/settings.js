@@ -190,6 +190,11 @@ export async function viewSettings(main, alive) {
         onclick: () => addEndpoint({ name: 'DeepSeek Chat', base_url: 'https://api.deepseek.com', model: 'deepseek-chat', api_key_env: 'DEEPSEEK_API_KEY' })
       }, icon('plus'), 'DeepSeek');
 
+      const bGrok = el('button', {
+        type: 'button', class: 'btn btn-xs',
+        onclick: () => addEndpoint({ name: 'xAI Grok', base_url: 'https://api.x.ai/v1', model: 'grok-3-mini', api_key_env: 'XAI_API_KEY' })
+      }, icon('plus'), 'Grok');
+
       const bCustom = el('button', {
         type: 'button', class: 'btn btn-xs',
         onclick: () => addEndpoint({ name: 'API tùy chỉnh' })
@@ -304,7 +309,7 @@ export async function viewSettings(main, alive) {
             stratSel
           ),
           el('div', { class: 'router-toolbar-btns' },
-            b9, bCockpit, bGemini, bDeepSeek, bCustom, bSave
+            b9, bCockpit, bGemini, bDeepSeek, bGrok, bCustom, bSave
           )
         ),
         el('p', { class: 'dim small', style: { margin: '2px 0 6px' }, text: '⚡ Khi bất kỳ API nào bị hết hạn mức (HTTP 429), quá tải hoặc sự cố mạng, hệ thống tự động nhảy sang API kế tiếp theo danh sách bên dưới mà không ngắt quãng tiến trình.' }),
@@ -441,7 +446,15 @@ export async function viewSettings(main, alive) {
         billing ? el('p', { class: 'small prov-warn-msg' }, v.status_msg, el('a', { href: 'https://aistudio.google.com/usage?tab=billing', target: '_blank', rel: 'noreferrer', text: ' Mở trang Billing' })) : '',
         el('p', { class: 'dim small', text: `Biến ảnh cảnh thành clip ${v.min}–${v.max} giây, giữ đúng nhân vật. Giá khoảng ${String(v.price['360p']).replace('.', ',')} USD/giây (360p), ${String(v.price['720p']).replace('.', ',')} (720p), ${String(v.price['1080p']).replace('.', ',')} (1080p). ${v.note}. Dùng chung key Gemini ở mục Kết nối AI dịch hoặc Tạo ảnh AI.` }));
     });
-    vidBox.replaceChildren(...stock, ...ai, el('p', { class: 'dim small img-prov-note', text: 'K-Tube Studio chỉ lấy video từ kho có giấy phép rõ ràng và lưu nguồn từng clip cạnh video xuất ra (file .nguon.txt). Không lấy video YouTube, Douyin, TikTok làm nguồn: "video free" trên đó không phải miễn phí bản quyền. Meta Muse chưa có API làm video chính thức nên chưa cắm được.' }));
+    const ls = (o.lipsync_providers || []).map((l) => el('div', { class: 'img-prov' + (l.ready ? ' ready' : '') },
+      el('div', { class: 'img-prov-head' }, el('b', { text: l.name }),
+        !l.ready ? el('span', { class: 'dim small', text: `Khớp khẩu hình (~${String(l.price_per_scene).replace('.', ',')} USD/cảnh)` })
+          : !l.usable ? el('span', { class: 'prov-warn', title: 'Bật ở mục Chi phí' }, icon('shield'), 'Trả phí, đang khóa')
+            : el('span', { class: 'prov-ok' }, icon('check'), 'Có key')),
+      el('p', { class: 'dim small' }, l.note + '.',
+        l.get ? [' Lấy key tại ', el('a', { href: 'https://' + l.get, target: '_blank', rel: 'noreferrer', text: l.get }), '.'] : ''),
+      ...(l.keys || []).map((k) => keyRow(k, l.name))));
+    vidBox.replaceChildren(...stock, ...ai, ...ls, el('p', { class: 'dim small img-prov-note', text: 'K-Tube Studio chỉ lấy video từ kho có giấy phép rõ ràng và lưu nguồn từng clip cạnh video xuất ra (file .nguon.txt). Không lấy video YouTube, Douyin, TikTok làm nguồn: "video free" trên đó không phải miễn phí bản quyền. Meta Muse chưa có API làm video chính thức nên chưa cắm được.' }));
   }
   paintVideoSources();
 

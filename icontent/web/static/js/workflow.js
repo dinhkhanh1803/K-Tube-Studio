@@ -25,10 +25,157 @@ export async function viewWorkflow(main, alive, arg) {
 }
 
 // ------------------------------------------------------------------ danh sách
+async function openStoryWorkflow(s, workflows) {
+  const sTitle = (s.title || '').trim().toLowerCase();
+  let wf = workflows.find((w) => {
+    const wName = (w.name || '').trim().toLowerCase().replace(/^quy trình:\s*/, '');
+    return wName && sTitle && (wName === sTitle || wName.includes(sTitle) || sTitle.includes(wName));
+  });
+  if (wf) {
+    location.hash = `#/flow/${enc(wf.id)}`;
+    return;
+  }
+  const created = await api('POST', '/api/workflows', {
+    name: `Quy trình: ${s.title || 'Mới'}`,
+    template: 'ai_story'
+  });
+  try {
+    const detail = await api('GET', `/api/workflows/${enc(created.id)}`);
+    if (detail && detail.nodes) {
+      for (const node of detail.nodes) {
+        if (node.type === 'idea') node.params.text = s.title || '';
+        if (node.type === 'ai_write') {
+          if (s.aspect) node.params.aspect = s.aspect;
+          if (s.style) node.params.style = s.style;
+        }
+      }
+      await api('PUT', `/api/workflows/${enc(created.id)}`, {
+        name: detail.name,
+        nodes: detail.nodes,
+        edges: detail.edges
+      });
+    }
+  } catch (_) {}
+  location.hash = `#/flow/${enc(created.id)}`;
+}
+
+function ytProjectRow(p, workflows) {
+  const isStory = p.kind === 'story';
+  const s = isStory ? p.item : null;
+  const w = isStory ? p.wf : p.item;
+  const isDone = isStory ? Boolean(s.output) : (w && w.state === 'done');
+  const isRunning = w && w.state === 'running';
+
+  const title = isStory ? s.title : w.name;
+  const coverUrl = isStory && s.cover ? `/api/stories/${enc(s.id)}/file/img/${enc(s.cover)}` : '';
+  const videoUrl = isStory && s.output ? `/api/stories/${enc(s.id)}/video` : '';
+
+  // Thumbnail (kiểu YouTube Studio hình chữ nhật nằm ngang)
+  const thumbBox = el('div', {
+    class: 'yt-thumb-box',
+    title: videoUrl ? 'Bấm để xem video ngay' : (isStory ? 'Mở kịch bản' : 'Mở quy trình'),
+    onclick: (e) => {
+      e.preventDefault();
+      if (videoUrl) {
+        videoModal(videoUrl, title);
+      } else if (isStory) {
+        location.hash = `#/story/${enc(s.id)}`;
+      } else {
+        location.hash = `#/flow/${enc(w.id)}`;
+      }
+    }
+  },
+    coverUrl
+      ? el('img', { class: 'yt-thumb', src: coverUrl, alt: title, loading: 'lazy' })
+      : el('div', { class: 'wf-project-thumb-empty' }, icon(videoUrl ? 'film' : 'spark')),
+    videoUrl ? el('div', { class: 'yt-play-overlay' }, el('div', { class: 'yt-play-circle' }, icon('play'))) : null,
+    isStory && s.aspect ? el('span', { class: 'yt-aspect-badge', text: s.aspect }) : null
+  );
+
+  // Cột thông tin chính (Tên video + số cảnh)
+  const colMain = el('div', { class: 'yt-col-main' },
+    el('div', { class: 'yt-title', title, text: title }),
+    el('div', { class: 'yt-meta' },
+      isStory ? el('span', { text: `${s.scenes} cảnh` }) : el('span', { text: `${w.nodes} khối` }),
+      el('span', { text: '·' }),
+      el('span', { text: isStory ? (s.aspect || '9:16') : (w.template || 'Quy trình') })
+    )
+  );
+
+  // Cột trạng thái
+  const colStatus = el('div', { class: 'yt-col-status' },
+    isDone
+      ? el('span', { class: 'yt-status-tag yt-status-done' }, icon('check'), 'Đã dựng xong')
+      : isRunning
+        ? el('span', { class: 'yt-status-tag yt-status-running' }, el('i', { class: 'tally' }), 'Đang chạy...')
+        : el('span', { class: 'yt-status-tag yt-status-draft' }, icon('spark'), 'Bản nháp')
+  );
+
+  // Cột ngày cập nhật
+  const colDate = el('div', { class: 'yt-col-date', text: `sửa ${fmtAgo((isStory ? s.updated : w.updated) || 0)}` });
+
+  // Nút xóa
+  const del = el('button', {
+    class: 'btn btn-xs btn-icon btn-ghost',
+    title: 'Xóa dự án',
+    'aria-label': 'Xóa dự án',
+    onclick: async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!await confirmDialog('Xóa dự án?', `"${title}" sẽ bị xóa.`, { okText: 'Xóa', danger: true })) return;
+      if (isStory) {
+        await api('DELETE', `/api/stories/${enc(s.id)}`);
+        if (w) { try { await api('DELETE', `/api/workflows/${enc(w.id)}`); } catch (_) {} }
+      } else {
+        await api('DELETE', `/api/workflows/${enc(w.id)}`);
+      }
+      location.reload();
+    }
+  }, icon('trash'));
+
+  // Cột nút thao tác bên phải
+  const colActions = el('div', { class: 'yt-col-actions' });
+  if (videoUrl) {
+    colActions.append(
+      el('button', {
+        class: 'btn btn-xs btn-primary',
+        onclick: () => videoModal(videoUrl, title)
+      }, icon('play'), 'Xem video')
+    );
+  }
+  colActions.append(
+    el('button', {
+      class: 'btn btn-xs',
+      title: 'Mở sơ đồ quy trình dựng khối',
+      onclick: () => {
+        if (isStory) openStoryWorkflow(s, workflows);
+        else location.hash = `#/flow/${enc(w.id)}`;
+      }
+    }, icon('flow'), 'Quy trình')
+  );
+  if (isStory) {
+    colActions.append(
+      el('a', {
+        class: 'btn btn-xs btn-ghost',
+        href: `#/story/${enc(s.id)}`,
+        title: 'Mở kịch bản'
+      }, icon('edit'), 'Kịch bản')
+    );
+  }
+  colActions.append(del);
+
+  return el('div', { class: 'yt-row' }, thumbBox, colMain, colStatus, colDate, colActions);
+}
+
 async function listPage(main, alive, reg) {
   main.classList.add('view-pad');
-  const { items } = await api('GET', '/api/workflows');
+  const [{ items }, storiesRes] = await Promise.all([
+    api('GET', '/api/workflows'),
+    api('GET', '/api/stories').catch(() => ({ items: [] }))
+  ]);
   if (!alive()) return null;
+  const stories = (storiesRes && storiesRes.items) || [];
+
   const create = (tid, btn) => busy(btn, async () => {
     const w = await api('POST', '/api/workflows', { template: tid });
     location.hash = `#/flow/${enc(w.id)}`;
@@ -39,6 +186,7 @@ async function listPage(main, alive, reg) {
       el('b', { text: t.name }), el('span', { class: 'dim small', text: t.desc }));
     return b;
   });
+
   const list = items.length ? el('div', { class: 'wf-list' }, items.map((w) => {
     const del = el('button', { class: 'btn btn-xs btn-icon btn-ghost', title: 'Xóa quy trình', 'aria-label': 'Xóa quy trình', onclick: (e) => { e.preventDefault(); busy(del, async () => {
       if (!await confirmDialog('Xóa quy trình?', `"${w.name}" sẽ bị xóa. Câu chuyện và video đã tạo vẫn còn.`, { okText: 'Xóa', danger: true })) return;
@@ -50,15 +198,53 @@ async function listPage(main, alive, reg) {
       el('div', { class: 'wf-card-t' }, el('b', { text: w.name }), el('span', { class: 'dim small', text: `${w.nodes} khối · sửa ${fmtAgo(w.updated)}` + (w.state ? ` · lần chạy cuối: ${STATE_LABEL[w.state] || w.state}` : '') })),
       del);
   })) : null;
+
+  // Thu thập dự án đã làm gần đây (kiểu hàng ngang YouTube Studio)
+  const matchedWfIds = new Set();
+  const recentProjects = [];
+
+  for (const s of stories) {
+    const sTitle = (s.title || '').trim().toLowerCase();
+    const matched = items.find((w) => {
+      const wName = (w.name || '').trim().toLowerCase().replace(/^quy trình:\s*/, '');
+      return wName && sTitle && (wName === sTitle || wName.includes(sTitle) || sTitle.includes(wName));
+    });
+    if (matched) matchedWfIds.add(matched.id);
+    recentProjects.push({ kind: 'story', item: s, wf: matched, updated: s.updated || 0, isDone: Boolean(s.output) });
+  }
+
+  for (const w of items) {
+    if (matchedWfIds.has(w.id)) continue;
+    if (w.state === 'running' || (w.touched && w.state !== 'done')) {
+      recentProjects.push({ kind: 'wf', item: w, wf: w, updated: w.updated || 0, isDone: w.state === 'done' });
+    }
+  }
+
+  recentProjects.sort((a, b) => (b.updated || 0) - (a.updated || 0));
+
+  const ytRows = recentProjects.map((p) => ytProjectRow(p, items));
+
   main.append(
     el('div', { class: 'page-head' }, el('div', { class: 'page-head-text' },
       el('div', { class: 'eyebrow', text: 'Quy trình' }),
       el('h1', { text: 'Kéo thả thành dây chuyền làm video' }),
       el('p', { text: 'Ghép các khối: ý tưởng, AI viết kịch bản, vẽ ảnh, giọng đọc, nhạc, dựng video, thumbnail, xuất bộ đăng bài. Bấm Chạy một lần là ra video kèm thumbnail. Chạy lại không tốn thêm: phần đã làm được dùng lại.' }))),
+
     el('h3', { class: 'ed-head', text: 'Bắt đầu từ mẫu' }),
     el('div', { class: 'wf-tpls' }, tplCards),
+
     list ? el('h3', { class: 'ed-head', text: 'Quy trình của tôi' }) : '',
-    list || '');
+    list || '',
+
+    el('hr', { class: 'wf-divider' }),
+
+    el('div', { class: 'wf-section-title' },
+      el('h3', {}, icon('film'), el('span', { text: 'Dự án đã làm gần đây' })),
+      el('span', { class: 'wf-section-count', text: `${recentProjects.length} dự án` })),
+    ytRows.length
+      ? el('div', { class: 'yt-table-wrap' }, ytRows)
+      : el('div', { class: 'wf-empty-sub', text: 'Chưa có dự án nào được dựng.' })
+  );
   return null;
 }
 
@@ -76,6 +262,8 @@ function chainIcons(types) {
 async function editorPage(main, alive, reg, wid) {
   let w = await api('GET', `/api/workflows/${enc(wid)}`);
   if (!alive()) return null;
+  localStorage.setItem('ic.lastWorkflow', wid);
+  S.lastFlow = wid;
   main.classList.add('view-flow');
   const N = reg.nodes;
   let view = { x: 0, y: 0, z: 1 };
