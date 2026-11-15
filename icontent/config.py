@@ -48,18 +48,19 @@ DEFAULTS: dict[str, Any] = {
     },
     "tts": {
         "enabled": True,
-        "engine": "vieneu",            # vieneu (tiếng Việt, trên máy) | vox (nhiều thứ tiếng, trên máy, Mô-đun AI) | edge (online, hay bị giới hạn)
-                                       # thứ tiếng khác tiếng Việt mà để vieneu: tự dùng vox nếu đã tải, không thì edge (voice.engine_for)
+        "engine": "vieneu",            # vieneu (tiếng Việt, trên máy) | capcut (TikTok hot trend, miễn phí) | vox (nhiều thứ tiếng) | edge (online)
+        # thứ tiếng khác tiếng Việt mà để vieneu: tự dùng vox nếu đã tải, không thì edge (voice.engine_for)
         # auto     : nhận diện người nói -> mỗi người một giọng (một người thì một giọng theo cao độ)
         # per_line : mỗi câu tự chọn nam/nữ (video nhiều người nói)
-        # fixed    : một giọng cố định (vieneu_voice / voice)
+        # fixed    : một giọng cố định (vieneu_voice / capcut_voice / voice)
         # clone    : VieNeu bắt chước âm sắc người nói gốc (thử nghiệm)
         "voice_mode": "auto",
         "diarize": True,                # chế độ auto: nghe ra mấy người nói, mỗi người một giọng, tách câu gộp 2 người
-        "male_voice": "",               # trống = Thiện Minh (vieneu) / vi-VN-NamMinhNeural (edge)
-        "female_voice": "",             # trống = Trúc Ly (vieneu) / vi-VN-HoaiMyNeural (edge)
+        "male_voice": "",               # trống = Thiện Minh (vieneu) / BV075_streaming (capcut) / vi-VN-NamMinhNeural (edge)
+        "female_voice": "",             # trống = Trúc Ly (vieneu) / BV421_vivn_streaming (capcut) / vi-VN-HoaiMyNeural (edge)
         "pitch_split": 175.0,           # Hz: dưới ngưỡng = giọng nam. Đo 14 giọng: nam cao nhất 165, nữ thấp nhất 186
         "voice": "vi-VN-HoaiMyNeural",  # giọng edge khi voice_mode=fixed
+        "capcut_voice": "BV075_streaming", # giọng CapCut khi voice_mode=fixed: BV075_streaming (Thanh Niên), BV421_vivn_streaming (Nhỏ Ngọt Ngào)...
         "vieneu_voice": "",             # giọng VieNeu khi voice_mode=fixed: "Thiện Minh", "Trúc Ly"...
         "vox_voice": "",                # giọng nhiều thứ tiếng khi voice_mode=fixed: en_f1, id_m2... (trống = giọng đầu tiên)
         "ref_audio": "",                # VieNeu: file mẫu 3-8s để clone giọng (ưu tiên hơn mọi chế độ khác)
@@ -132,6 +133,20 @@ DEFAULTS: dict[str, Any] = {
         "max_bitrate": "8M",           # trần bitrate video ("" = không giới hạn)
         "preset": "medium",
         "auto_qc": True,               # dựng xong tự kiểm định thành phẩm
+    },
+    "telegram": {
+        "enabled": False,              # bật/tắt bot Telegram điều khiển từ xa
+        "bot_token": "",               # token từ @BotFather
+        "admin_chat_ids": [],          # danh sách ID người dùng được phép điều khiển
+        "send_video": True,            # tự động gửi file video kết quả nếu <= 50MB
+        "notify_progress": True,       # cập nhật tiến trình qua tin nhắn
+    },
+    "watchdog": {
+        "enabled": False,              # bật/tắt tự động theo dõi kênh
+        "interval_minutes": 30,        # chu kỳ quét kênh (phút)
+        "channels": [],                # danh sách link kênh cần theo dõi
+        "auto_render": True,           # tự động xử lý và render khi có video mới
+        "target_lang": "vi",           # ngôn ngữ đích khi tự động render
     },
 }
 

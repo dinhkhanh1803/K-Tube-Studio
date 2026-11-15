@@ -103,3 +103,4 @@ echo Giờ đây bạn có thể khởi động K-Tube Studio bằng cách bấm
 echo 👉 "K-Tube Studio (Web).cmd"
 echo.
 pause
+

@@ -17,10 +17,38 @@ from .util import log, read_wav, write_wav
 DEFAULTS = {
     "vieneu": {"male": "Thiện Minh", "female": "Trúc Ly"},
     "edge": {"male": "vi-VN-NamMinhNeural", "female": "vi-VN-HoaiMyNeural"},
+    "capcut": {"male": "BV075_streaming", "female": "BV421_vivn_streaming"},
 }
 
 
 # --------------------------------------------------------------------------- danh sách giọng
+
+def capcut_voices(lang: str = "vi") -> list[dict]:
+    """Danh sách giọng đọc CapCut (tiếng Việt hot trend & quốc tế)."""
+    try:
+        from .capcut_tts import CapCutClient
+        client = CapCutClient()
+        raw = client.list_voices(lang="vi-VN" if lang == "vi" else None)
+        out = []
+        for v in raw:
+            name_l = v.display_name.lower()
+            type_l = v.voice_type.lower()
+            is_female = "female" in type_l or "nữ" in name_l or "gái" in name_l or "cô" in name_l or "mai" in name_l or "sisi" in type_l
+            is_male = not is_female and ("nam" in name_l or "male" in type_l or "thanh niên" in name_l or "robot" in name_l or "alex" in name_l or "kenny" in name_l)
+            g = "female" if is_female else ("male" if is_male else "female")
+            out.append({
+                "id": v.voice_type,
+                "label": f"{v.display_name} (CapCut)",
+                "gender": g,
+                "resource_id": v.resource_id,
+                "engine": "capcut",
+                "lang": "vi" if v.lang in ("vi-VN", "vi") else (v.lang or "vi"),
+            })
+        return out
+    except Exception as e:
+        log("voice", f"Lỗi nạp danh sách giọng CapCut: {e}")
+        return []
+
 
 def vieneu_voices() -> list[dict]:
     """[{id, label, gender, region, style}] — nhãn VieNeu dạng '⭐ Trúc Ly — Nữ · Bắc · Phong cách tự nhiên'."""
@@ -75,6 +103,8 @@ def engine_for(cfg) -> str:
 
 def default_voice(engine: str, lang: str, gender: str) -> str:
     from . import langs, voxtts
+    if engine == "capcut":
+        return DEFAULTS["capcut"].get(gender, "BV075_streaming")
     if engine == "vox":
         return voxtts.default_voice(lang, gender)
     if engine == "edge":
@@ -180,11 +210,13 @@ def assign_genders(job: Path, segs: list[Segment], wav: Path, cfg, hint: str = "
 def _fits_engine(voice: str, engine: str, lang: str = "vi") -> bool:
     """Giọng có đọc được bằng bộ đọc này, cho ngôn ngữ này không. Đổi bộ đọc hay đổi thị trường mà giữ giọng cũ thì đọc không được.
     Edge: vi-VN-HoaiMyNeural (đúng vùng của ngôn ngữ). Nhiều thứ tiếng: en_f1 (đúng ngôn ngữ). VieNeu: tên người, chỉ tiếng Việt.
-    Giọng của tôi (me:...): VieNeu (tiếng Việt) và bộ đọc nhiều thứ tiếng (mọi ngôn ngữ)."""
+    CapCut: mã BV / multi / vi_... Giọng của tôi (me:...): VieNeu (tiếng Việt) và bộ đọc nhiều thứ tiếng (mọi ngôn ngữ)."""
     from . import langs, voxtts
     is_edge = voice.endswith("Neural") and voice.count("-") >= 2
     if voice.startswith("me:"):
         return engine == "vox" or (engine == "vieneu" and lang == "vi")
+    if engine == "capcut":
+        return any(voice.startswith(p) for p in ("BV", "multi_", "vi_", "ICL_", "SF9", "rKZ"))
     if engine == "edge":
         loc = langs.edge_locale(lang)
         return is_edge and (not loc or voice.startswith(loc + "-"))
@@ -204,11 +236,11 @@ def voice_for(seg: Segment, cfg) -> str:
         v = (t.get("speaker_voices") or {}).get(seg.speaker)
         if v and _fits_engine(v, eng, lang):
             return v
-    if t.voice_mode in ("auto", "per_line"):
+    if t.voice_mode in ("auto", "per_line", "dialogue"):
         g = seg.gender or "male"
         chosen = t.male_voice if g == "male" else t.female_voice
         return chosen if chosen and _fits_engine(chosen, eng, lang) else default_voice(eng, lang, g)
-    fixed = t.vieneu_voice if eng == "vieneu" else t.get("vox_voice") if eng == "vox" else t.voice
+    fixed = t.vieneu_voice if eng == "vieneu" else t.get("capcut_voice") if eng == "capcut" else t.get("vox_voice") if eng == "vox" else t.voice
     return fixed if fixed and _fits_engine(fixed, eng, lang) else default_voice(eng, lang, seg.gender or "female")
 
 

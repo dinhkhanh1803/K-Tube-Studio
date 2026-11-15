@@ -21,7 +21,9 @@ from .util import check_cancel, find_ffmpeg, log, run_lines
 TARGET_LUFS = -14.0
 BLACK_MIN, FREEZE_MIN, SILENCE_MIN = 0.4, 3.0, 1.5
 PENALTY = {"bad": 25, "warn": 8, "info": 0, "ok": 0}
-VERSION = 2
+VERSION = 3
+FILM_MIN = 1200.0        # giây: video dài hơn coi là phim truyện
+FILM_BLACK, FILM_SILENCE = 10.0, 20.0     # phim truyện: đen màn / không tiếng dài hơn thế mới đáng ngờ
 
 
 # --------------------------------------------------------------------------- đo
@@ -238,12 +240,17 @@ def evaluate(info: dict, m: dict, ctx: dict, faces: dict | None = None, hanzi: d
 
     fi, fo = float(ctx.get("fade_in") or 0), float(ctx.get("fade_out") or 0)
     cards = (float(ctx.get("intro") or 0), float(ctx.get("outro") or 0))
+    # phim truyện (phim trọn bộ từ archive.org, hoặc video dài): màn đen đầu/cuối phim, cảnh không lời là dụng ý của phim,
+    # không phải lỗi dựng. Đo thật Night of the Living Dead: 4 đoạn đen + 16 khoảng lặng, bị trừ còn 84 điểm dù không có lỗi nào.
+    film = bool(ctx.get("film")) or total >= FILM_MIN
     black = _spans(m.get("black") or [], fi, fo, total, *cards)
     if black:
         # đoạn đen ngắn thường là nhịp chuyển cảnh của chính video gốc: chỉ ghi nhận, không trừ điểm
         longest_black = max(b - s for s, b in black)
-        add("black", "warn" if longest_black >= 2 else "info", f"{len(black)} đoạn màn hình đen (dài nhất {_fmt_s(longest_black)} giây)",
-            "Thường do đoạn cắt hoặc video gốc. Bấm mốc thời gian để xem.", [b[0] for b in black])
+        add("black", "warn" if longest_black >= (FILM_BLACK if film else 2) else "info",
+            f"{len(black)} đoạn màn hình đen (dài nhất {_fmt_s(longest_black)} giây)",
+            "Phim gốc thường đen màn lúc mở đầu, kết thúc và chuyển cảnh. Bấm mốc thời gian để xem." if film
+            else "Thường do đoạn cắt hoặc video gốc. Bấm mốc thời gian để xem.", [b[0] for b in black])
     else:
         add("black", "ok", "Không có đoạn màn hình đen")
     freeze = _spans(m.get("freeze") or [], fi, fo, total, *cards)
@@ -256,7 +263,10 @@ def evaluate(info: dict, m: dict, ctx: dict, faces: dict | None = None, hanzi: d
     if a:
         silence = _spans(m.get("silence") or [], fi, fo, total, *cards)
         long_silence = [s for s in silence if s[1] - s[0] >= 4]
-        if long_silence:
+        if film and long_silence and all(s[1] - s[0] < FILM_SILENCE for s in long_silence):
+            add("silence", "info", f"{len(long_silence)} cảnh không lời trên 4 giây",
+                "Phim gốc có những cảnh không thoại, không nhạc. Bấm mốc thời gian để nghe lại nếu thấy lạ.", [s[0] for s in long_silence])
+        elif long_silence:
             add("silence", "warn", f"{len(long_silence)} đoạn câm trên 4 giây", "Người xem dễ thoát ở đây. Có thể dùng Tự cắt khoảng lặng.", [s[0] for s in long_silence])
         elif silence:
             add("silence", "info", f"{len(silence)} khoảng lặng ngắn", "", [s[0] for s in silence])
@@ -328,6 +338,13 @@ def cached(job: Path) -> dict | None:
     return d
 
 
+def _platform(job: Path) -> str:
+    try:
+        return str(json.loads((job / "meta.json").read_text(encoding="utf-8")).get("platform") or "")
+    except (OSError, ValueError):
+        return ""
+
+
 def run(job: Path, cfg, deep: bool = True) -> dict:
     """Kiểm định final.mp4 rồi lưu qc.json."""
     path = job / "final.mp4"
@@ -360,7 +377,7 @@ def run(job: Path, cfg, deep: bool = True) -> dict:
             log("qc", f"Bỏ qua kiểm tra chữ Trung: {str(e)[:120]}")
     ctx = {"expected": rendered.get("out_dur"), "fade_in": rendered.get("fade_in"), "fade_out": rendered.get("fade_out"),
            "intro": rendered.get("intro"), "outro": rendered.get("outro"),
-           "dub": (job / "dub.wav").exists() and bool(cfg.tts.enabled)}
+           "dub": (job / "dub.wav").exists() and bool(cfg.tts.enabled), "film": _platform(job) == "archive"}
     res = evaluate(info, m, ctx, faces, hanzi)
     res["key"] = key
     (job / "qc.json").write_text(json.dumps(res, ensure_ascii=False), encoding="utf-8")

@@ -294,10 +294,16 @@ def save(job: Path, info: dict) -> None:
     (job / "speakers.json").write_text(json.dumps(info, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
+CAPCUT_ORDER = {
+    "male": ["BV075_streaming", "multi_male_felipe_uranus_bigtts", "BV560_streaming"],
+    "female": ["BV421_vivn_streaming", "multi_female_richgirl_uranus_bigtts", "BV074_streaming", "multi_female_sisi_uranus_bigtts"],
+}
+
+
 def _pool(cfg, gender: str, need: int) -> list[str]:
     """Giọng ứng viên cho một giới tính, giọng đã chọn trong cài đặt đứng đầu.
     Edge chỉ có 1 giọng Việt mỗi giới tính nên người thứ hai cùng giới sẽ dùng chung giọng."""
-    from .voice import _fits_engine, default_voice, vieneu_voices
+    from .voice import _fits_engine, default_voice, vieneu_voices, capcut_voices
 
     t = cfg.tts
     engine = t.engine
@@ -305,6 +311,13 @@ def _pool(cfg, gender: str, need: int) -> list[str]:
     chosen = t.male_voice if gender == "male" else t.female_voice
     first = chosen if chosen and _fits_engine(chosen, engine, lang) else default_voice(engine, lang, gender)
     pool = [first] if first else []
+    if engine == "capcut":
+        pool += [n for n in CAPCUT_ORDER.get(gender, []) if n not in pool]
+        try:
+            pool += [v["id"] for v in capcut_voices(lang) if v["gender"] == gender and v["id"] not in pool]
+        except Exception:
+            pass
+        return pool
     if engine == "vox":      # mỗi thứ tiếng có 2 giọng mỗi giới tính: người thứ hai cùng giới có giọng riêng
         from .voxtts import voices
         return pool + [v["id"] for v in voices(lang) if v["gender"] == gender and v["id"] not in pool]

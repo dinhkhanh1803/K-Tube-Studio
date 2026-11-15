@@ -35,8 +35,20 @@ def _forced(from_stage: str | None) -> set[str]:
 
 
 def job_options(job: Path) -> dict:
+    """Tùy chọn riêng của video. Nguồn nào cần cấu hình khác mặc định thì ghi vào meta.json ("defaults"), gộp bên dưới tùy chọn
+    người dùng (chỉnh ở Studio vẫn thắng). Ví dụ phim archive.org: mặc định ép Whisper nghe tiếng Trung kèm câu mồi tiếng Trung,
+    với phim tiếng Anh có lúc Whisper dịch luôn sang chữ Trung; dò sub Trung in sẵn thì có thể che nhầm chữ tiếng Anh trên phim."""
     p = job / "options.json"
-    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+    opts = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+    m = job / "meta.json"
+    if m.exists():
+        try:
+            d = json.loads(m.read_text(encoding="utf-8")).get("defaults")
+        except (ValueError, OSError):
+            d = None
+        if isinstance(d, dict) and d:
+            return merge_dicts(d, opts)
+    return opts
 
 
 def save_job_options(job: Path, opts: dict) -> None:
@@ -182,6 +194,40 @@ def _transient(e: Exception) -> bool:
                                 "unavailable", "internalservererror", "apitimeouterror", "connection"))
 
 
+AI_PROBE_EVERY = 90     # giây: AI chính quá tải thì cứ chừng này lại gọi thử, chạy lại được thì dịch tiếp bằng AI
+OFFLINE_CHUNK = 40      # câu dịch offline giữa hai lần gọi thử AI
+
+
+def _offline_with_ai_probe(segs, ai, off, meta: dict, only: set, context: dict | None, probe: dict):
+    """Dịch offline từng phần, giữa các phần gọi thử lại AI chính. Trả về cfg AI nếu AI dịch nốt được, None nếu offline dịch hết.
+    Đo thật Night of the Living Dead (1166 câu): Gemini quá tải vài phút ở câu 120, trước đây cả 1046 câu còn lại dịch offline
+    (90% bộ phim, xưng "bạn", sai nghĩa câu cụt) dù Gemini chạy lại ngay sau đó."""
+    import time
+    from .translate import translate_segments
+
+    while True:
+        todo = sorted(s.id for s in segs if s.id in only and not s.trans.strip())
+        if not todo:
+            return None
+        span = (len(only) - len(todo), len(only))
+        if probe["at"] and time.monotonic() - probe["at"] >= AI_PROBE_EVERY:
+            try:
+                translate_segments(segs, ai, meta, only=set(todo), context=context, span=span)
+                return ai
+            except Cancelled:
+                raise
+            except Exception as e:      # noqa: BLE001 — AI vẫn lỗi: dịch offline tiếp
+                left = sum(1 for s in segs if s.id in only and not s.trans.strip())
+                if _transient(e):
+                    probe["at"] = time.monotonic()
+                    log("translate", f"{provider_name(ai.translate)} vẫn lỗi tạm thời, dịch tiếp bằng {provider_name(off.translate)} "
+                                     f"({left} câu còn lại), {AI_PROBE_EVERY} giây sau thử lại AI")
+                else:
+                    probe["at"] = 0.0
+                    log("translate", f"{provider_name(ai.translate)} lỗi: {friendly_translate_error(e, ai.translate.provider)}")
+        translate_segments(segs, off, meta, only=set(todo[:OFFLINE_CHUNK]), context=None, span=span)
+
+
 def translate_resilient(segs, cfg, meta: dict, only: set, context: dict | None = None):
     """Dịch các câu trong `only`; cách đang dùng lỗi thì dịch tiếp các câu còn thiếu bằng cách sau. Trả về cfg đã dịch xong."""
     from .offline import ready
@@ -190,13 +236,20 @@ def translate_resilient(segs, cfg, meta: dict, only: set, context: dict | None =
     chain = fallback_chain(cfg)
     errors: list[tuple[str, str]] = []
     waited = False
+    probe = {"at": 0.0}      # AI chính lỗi tạm thời lúc nào: dịch offline từng phần, thỉnh thoảng gọi lại AI
     for i, c in enumerate(chain):
         todo = {s.id for s in segs if s.id in only and not s.trans.strip()}
         if not todo:
             return c
         try:
             try:
-                translate_segments(segs, c, meta, only=todo, context=context if i == 0 else None)
+                if i > 0 and probe["at"]:
+                    back = _offline_with_ai_probe(segs, chain[0], c, meta, only, context, probe)
+                    if back is not None:
+                        log("translate", f"Đã dịch xong, {provider_name(chain[0].translate)} chạy lại được nên phần sau dịch bằng AI.")
+                        return back
+                else:
+                    translate_segments(segs, c, meta, only=todo, context=context if i == 0 else None)
             except Cancelled:
                 raise
             except Exception as e:      # noqa: BLE001
@@ -218,6 +271,9 @@ def translate_resilient(segs, cfg, meta: dict, only: set, context: dict | None =
         except Cancelled:
             raise
         except Exception as e:      # noqa: BLE001 — thử cách sau, giữ lời giải thích của từng cách
+            if i == 0 and c.translate.provider in ("claude", "openai") and _transient(e):
+                import time as _t
+                probe["at"] = _t.monotonic()
             msg = friendly_translate_error(e, c.translate.provider)
             errors.append((provider_name(c.translate), msg))
             left = sum(1 for s in segs if s.id in only and not s.trans.strip())
@@ -388,6 +444,10 @@ def run_job(src: str, cfg, from_stage: str | None = None, overrides: dict | None
             log("asr", "Nhận dạng giọng nói ...")
             words = transcribe_words(job / "asr.wav", cfg.asr)
             words_path.write_text(json.dumps(words, ensure_ascii=False), encoding="utf-8")
+            from . import asr as _asr
+            if _asr.LAST_LANGUAGE and meta.get("src_lang") != _asr.LAST_LANGUAGE:     # bước dịch đọc để viết lời nhắn đúng ngôn ngữ gốc
+                meta["src_lang"] = _asr.LAST_LANGUAGE
+                (job / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
         words = [tuple(w) for w in json.loads(words_path.read_text(encoding="utf-8"))]
         from .asr import resegment
         segs = None

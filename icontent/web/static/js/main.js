@@ -20,9 +20,12 @@ import { openOnboarding } from './onboard.js';
 import { viewMerge } from './merge.js';
 import { viewSettings } from './settings.js';
 import { openShortcuts, viewStudio } from './studio.js';
+import { viewBot } from './bot.js';
+import { refresh as checkUpdate } from './update.js';
+import { openChangelog } from './changelog.js';
 
-const VIEWS = { home: viewHome, new: viewNew, discover: viewDiscover, library: viewLibrary, image: viewImageLab, thumb: viewThumbnail, flow: viewWorkflow, editor: viewEditor, story: viewStory, voice: viewVoiceover, merge: viewMerge, studio: viewStudio, settings: viewSettings, about: viewAbout };
-const TITLES = { home: 'Trang chủ', new: 'Dịch video', discover: 'Khám phá', library: 'Thư viện', image: 'Sửa ảnh', thumb: 'Thumbnail', flow: 'Quy trình', editor: 'Trình dựng', story: 'Kể chuyện', voice: 'Đọc văn bản', merge: 'Ghép video', studio: 'Studio', settings: 'Cài đặt', about: 'Giới thiệu' };
+const VIEWS = { home: viewHome, new: viewNew, discover: viewDiscover, library: viewLibrary, image: viewImageLab, thumb: viewThumbnail, flow: viewWorkflow, editor: viewEditor, story: viewStory, voice: viewVoiceover, merge: viewMerge, bot: viewBot, studio: viewStudio, settings: viewSettings, about: viewAbout };
+const TITLES = { home: 'Trang chủ', new: 'Dịch video', discover: 'Khám phá', library: 'Thư viện', image: 'Sửa ảnh', thumb: 'Thumbnail', flow: 'Quy trình', editor: 'Trình dựng', story: 'Kể chuyện', voice: 'Đọc văn bản', merge: 'Ghép video', bot: 'Trợ lý Telegram 24/7', studio: 'Studio', settings: 'Cài đặt', about: 'Giới thiệu' };
 let routeTok = 0, cleanup = null, currentHash = '', ignoreHash = false;
 
 function parseHash() {
@@ -119,6 +122,7 @@ async function openPalette() {
     { label: 'Video kể chuyện từ ảnh', icon: 'film', run: go('#/story') },
     { label: 'Đọc văn bản thành giọng nói', icon: 'mic', run: go('#/voice') },
     { label: 'Cài đặt', icon: 'sliders', run: go('#/settings') },
+    { label: 'Lịch sử cập nhật qua các phiên bản', icon: 'clock', run: () => openChangelog() },
     { label: 'Kết nối AI dịch', icon: 'key', run: go('#/settings') },
     { label: 'Bản quyền: gia hạn, nhập key mới', icon: 'shield', run: go('#/settings') },
     { label: 'Mời tác giả cà phê', icon: 'coffee', run: () => openCoffee() },
@@ -166,6 +170,7 @@ async function boot() {
   // trước mọi thứ, kể cả màn Kích hoạt: máy chủ phải biết cửa sổ còn mở. Nối lại được thì vẽ lại trang đang báo lỗi mất kết nối
   startConn(() => { if ($('#main .empty.error')) route(); pollSoon(); });
   if (!location.hash || location.hash === '#' || location.hash === '#/') history.replaceState(null, '', '#/home');
+  $('#changelog-btn')?.addEventListener('click', () => openChangelog());
   $('#coffee-btn').addEventListener('click', () => openCoffee());
   $('#cmdk-btn').addEventListener('click', () => openPalette());
   // bản phát hành chưa kích hoạt: chỉ hiện màn Kích hoạt, không gọi chức năng nào (máy chủ cũng chặn)
@@ -176,6 +181,7 @@ async function boot() {
   loadFonts();
   loadVoices();
   pollQueue();
+  checkUpdate().catch(() => {});
   setInterval(loadStatus, 60000);
 }
 boot();

@@ -19,9 +19,7 @@ pnpm-debug.log*
 # Binaries, tools & Embedded runtimes
 runtime/
 tools/
-ai/engines/
-ai/models/
-ai/logs/
+ai/
 *.part
 
 # Workspace & Output generated files
@@ -29,6 +27,8 @@ workspace/*
 !workspace/.gitkeep
 output/*
 !output/.gitkeep
+scratch/
+paid.json
 
 # Sensitive files, API Keys, Cookies & Local configs
 keys.json
@@ -42,6 +42,7 @@ assets/voices/*
 !assets/voices/.gitkeep
 assets/.imagegen_status.json
 assets/.stock_cache/
+assets/.films_cache/
 assets/.videogen_status.json
 
 # Logs & temp files

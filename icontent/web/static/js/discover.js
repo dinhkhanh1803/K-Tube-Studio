@@ -23,7 +23,7 @@ export function fmtCount(n) {
 }
 const coverSmall = (u) => (u && u.includes('hdslb.com') ? u + '@480w_300h_1c.jpg' : u);
 
-export async function viewDiscover(main, alive) {
+export async function viewDiscover(main, alive, arg) {
   await ensureConfig();
   if (!alive()) return null;
   let userRecipes = [];
@@ -33,7 +33,9 @@ export async function viewDiscover(main, alive) {
   const pref = (k, d) => localStorage.getItem('ic.disc.' + k) ?? d;
   const setPref = (k, v) => localStorage.setItem('ic.disc.' + k, v);
   const st = {
-    tab: pref('tab', 'videos'), cat: pref('cat', 'picks'), dur: pref('dur', ''), orient: pref('orient', ''), sort: pref('sort', 'score'),
+    // #/discover/films mở thẳng tab
+    tab: ['videos', 'topics', 'films', 'saved'].includes(arg) ? arg : pref('tab', 'videos'),
+    cat: pref('cat', 'picks'), dur: pref('dur', ''), orient: pref('orient', ''), sort: pref('sort', 'score'),
     recipe: pref('recipe', ''), items: [], at: 0, stale: false, error: '', loading: false, vi: new Map(), selected: new Map(), saved: [],
     live: [], archive: [], showArch: false, how: '', query: '', results: null, zh: '', links: [], topics: null,
   };
@@ -73,7 +75,7 @@ export async function viewDiscover(main, alive) {
   });
   const refreshBtn = el('button', { class: 'btn', title: 'Tải lại danh sách mới nhất', onclick: () => busy(refreshBtn, () => reload(true)) }, icon('refresh'), 'Làm mới');
   const tabs = el('div', { class: 'seg seg-inline dc-tabs', role: 'tablist' });
-  const TABS = [['videos', 'Video thịnh hành'], ['topics', 'Đề tài hot'], ['saved', 'Đã lưu']];
+  const TABS = [['videos', 'Video thịnh hành'], ['topics', 'Đề tài hot'], ['films', 'Phim miễn phí'], ['saved', 'Đã lưu']];
   const tabBtn = {};
   TABS.forEach(([k, label]) => {
     tabBtn[k] = el('button', { type: 'button', class: 'seg-btn', role: 'tab', onclick: () => setTab(k) }, label);
@@ -92,17 +94,19 @@ export async function viewDiscover(main, alive) {
     return {};
   };
   const note = el('div', { class: 'dc-note' });
+  const legal = el('p', { class: 'dim small dc-legal' });
+  const headH1 = el('h1');
+  const headP = el('p');
   const body = el('div', { class: 'dc-body' });
   const selBar = el('div', { class: 'dc-selbar', hidden: true });
 
   main.append(
     el('div', { class: 'page-head' },
-      el('div', { class: 'page-head-text' }, el('div', { class: 'eyebrow', text: 'Khám phá' }), el('h1', { text: 'Bên Trung Quốc đang xem gì?' }),
-        el('p', { text: 'Chọn video đang lên hoặc đề tài hot, bấm một nút là K-Tube Studio tải về, dịch, lồng tiếng và xóa sub.' })),
+      el('div', { class: 'page-head-text' }, el('div', { class: 'eyebrow', text: 'Khám phá' }), headH1, headP),
       el('div', { class: 'actions' }, el('div', { class: 'search-box dc-search' }, icon('search'), searchInp), refreshBtn)),
     el('div', { class: 'dc-toolbar' }, tabs, el('span', { class: 'grow' }), el('span', { class: 'dim small', text: 'Làm theo công thức' }), recipeSel),
     note, body, selBar,
-    el('p', { class: 'dim small dc-legal', text: 'Video thuộc bản quyền của tác giả. Hãy xin phép hoặc làm đúng quy định của nền tảng trước khi đăng lại.' }));
+    legal);
 
   function paintNote() {
     const items = [];
@@ -366,6 +370,7 @@ export async function viewDiscover(main, alive) {
   async function runSearch(q) {
     q = (q || '').trim();
     if (!q) return;
+    if (st.tab === 'films') { fst.q = q; fst.page = 1; loadFilms(); return; }
     st.query = q; st.results = null;
     setTab('search');
     try {
@@ -399,8 +404,151 @@ export async function viewDiscover(main, alive) {
     return box;
   }
 
+  // ------------------------------------------------ tab Phim miễn phí (Internet Archive, xem films.py)
+  const FILM_SORTS = [['popular', 'Xem nhiều nhất'], ['added', 'Mới thêm vào kho'], ['old', 'Phim cũ nhất'], ['new', 'Phim mới nhất']];
+  const fst = { cat: pref('fcat', 'feature'), sort: pref('fsort', 'popular'), q: '', page: 1, data: null, error: '', loading: false, cats: [], en: '' };
+  const filmBox = el('div', {});
+  const licTag = (v) => el('span', { class: 'dc-tag fm-lic' + (v.lic === 'by' ? ' by' : ''), title: v.lic === 'by' ? 'Dùng được, kể cả kiếm tiền. Phải ghi tên tác giả (iContent soạn sẵn dòng ghi nguồn ở Studio > Đăng bài)' : 'Hết bản quyền: dùng, sửa, kiếm tiền tự do', text: v.lic === 'by' ? 'CC BY' : 'Hết bản quyền' });
+
+  function FilmCard(v) {
+    const vi = el('div', { class: 'dc-title', title: v.title });
+    const orig = el('div', { class: 'dc-zh fm-orig', text: v.title, title: v.title });
+    const paintVi = () => { const t = st.vi.get(v.title); vi.textContent = t || v.title; orig.hidden = !t; };
+    paintVi();
+    viListeners.add(paintVi);
+    const img = el('img', { alt: '', loading: 'lazy', referrerpolicy: 'no-referrer', src: v.cover, onerror: () => { img.remove(); } });
+    const done = v.state === 'done';
+    const act = done || v.state === 'started'
+      ? el('a', { class: 'btn btn-xs', href: '#/studio/' + enc(v.job || ''), onclick: (e) => e.stopPropagation() }, icon('sliders'), done ? 'Đã làm, mở Studio' : 'Đang làm dở')
+      : el('button', { class: 'btn btn-xs btn-primary', onclick: (e) => { e.stopPropagation(); openFilm(v); } }, icon('play'), 'Chọn để làm');
+    const root = el('article', { class: 'dc-card', tabindex: '0', onclick: () => openFilm(v), onkeydown: (e) => { if (e.key === 'Enter' && e.target === root) openFilm(v); } },
+      el('div', { class: 'dc-thumb fm-thumb' }, icon('film', 'jc-ph'), img,
+        v.duration ? el('span', { class: 'jc-dur mono', text: fmtDur(v.duration) }) : null,
+        el('span', { class: 'dc-play' }, icon('play'))),
+      el('div', { class: 'dc-info' }, vi, orig,
+        el('div', { class: 'dc-tags' }, licTag(v), v.year ? el('span', { class: 'dc-tag fm-year', text: String(v.year) }) : null),
+        el('div', { class: 'dc-stats' }, el('span', { title: 'Lượt tải trên archive.org' }, icon('download'), el('span', { class: 'mono', text: fmtCount(v.downloads) }))),
+        v.creator ? el('div', { class: 'dc-by dim small', title: v.creator, text: v.creator }) : null,
+        el('div', { class: 'dc-acts' }, act, el('span', { class: 'grow' }),
+          el('a', { class: 'btn btn-xs btn-icon btn-ghost', href: v.url, target: '_blank', rel: 'noreferrer', title: 'Mở trên archive.org', 'aria-label': 'Mở trên archive.org', onclick: (e) => e.stopPropagation() }, icon('external')))));
+    root.__unsub = () => viListeners.delete(paintVi);
+    return root;
+  }
+
+  async function enqueueFilm(d, vids, btn) {
+    const title = st.vi.get(d.title) || d.title;
+    const titles = {};
+    vids.forEach((v) => { titles[v.src] = vids.length > 1 || d.videos.length > 1 ? `${title} - ${v.label}` : title; });
+    await busy(btn, async () => {
+      await api('POST', '/api/queue', { sources: vids.map((v) => v.src), options: recipeOptions(), titles });
+      pollSoon();
+      const long = vids.filter((v) => v.duration > 900).length;
+      toast(`Đã thêm ${vids.length} video vào hàng đợi` + (long ? `. Có ${long} video dài trên 15 phút: tải và lồng tiếng sẽ mất khá lâu` : ''), 'success', { actions: [{ label: 'Xem tiến độ', onClick: () => { location.hash = '#/new'; } }] });
+    });
+  }
+
+  function openFilm(v) {
+    const body = el('div', { class: 'modal-body' }, el('div', { class: 'skel', style: { height: '320px' } }));
+    const foot = el('div', { class: 'modal-foot' },
+      el('a', { class: 'btn btn-ghost left', href: v.url, target: '_blank', rel: 'noreferrer' }, icon('external'), 'Mở trên archive.org'),
+      el('button', { class: 'btn btn-ghost', onclick: () => m.close() }, 'Đóng'));
+    const m = openModal([modalHead('film', st.vi.get(v.title) || v.title, () => m), body, foot], { cls: 'modal-wide', onClose: () => { const f = body.querySelector('iframe'); if (f) f.removeAttribute('src'); } });
+    api('GET', `/api/films/item/${enc(v.id)}`).then((d) => {
+      const frame = el('iframe', { class: 'dc-frame', title: 'Xem trước phim', allow: 'fullscreen', allowfullscreen: 'true', referrerpolicy: 'no-referrer', src: `https://archive.org/embed/${enc(d.id)}` });
+      const side = el('div', { class: 'dc-preview-side' },
+        el('div', { class: 'dc-zh', text: d.title }),
+        el('p', { class: 'muted small', text: [d.year, d.creator].filter(Boolean).join(' · ') }),
+        d.allowed ? el('div', { class: 'dc-tags' }, licTag({ lic: d.license.startsWith('CC BY') ? 'by' : 'pd' }),
+          d.license_url ? el('a', { class: 'small', href: d.license_url, target: '_blank', rel: 'noreferrer' }, 'Xem giấy phép') : null) : null,
+        d.desc ? el('p', { class: 'dim small dc-desc', text: d.desc }) : null);
+      const parts = [el('div', { class: 'dc-preview' }, el('div', { class: 'dc-frame-wrap' }, frame), side)];
+      if (!d.allowed) {
+        parts.push(el('div', { class: 'banner banner-plain fm-block' }, icon('shield'), el('div', {}, el('b', { text: 'iContent không tải phim này. ' }), d.reason)));
+        put(body, ...parts);
+        return;
+      }
+      if (!d.videos.length) {
+        parts.push(el('p', { class: 'muted', text: 'Mục này không có file video tải được.' }));
+        put(body, ...parts);
+        return;
+      }
+      // chọn sẵn một video chưa làm: mục truyền hình có khi vài chục tập, làm hết một lượt mất cả buổi
+      const first = d.videos.find((x) => !x.state) || d.videos[0];
+      const picked = new Set([first.src]);
+      const rows = el('div', { class: 'fm-eps' });
+      const go = el('button', { class: 'btn btn-primary' });
+      const paintGo = () => {
+        const n = picked.size;
+        go.disabled = !n;
+        put(go, icon('play'), d.videos.length > 1 ? (n ? `Làm ${n} video` : 'Chọn tập để làm') : 'Làm video này');
+      };
+      go.onclick = () => enqueueFilm(d, d.videos.filter((x) => picked.has(x.src)), go).then(() => m.close());
+      const info = (x) => [x.duration ? fmtDur(x.duration) : '', x.height ? x.height + 'p' : '', x.size ? (x.size >= 1e9 ? (x.size / 1e9).toFixed(1).replace('.', ',') + ' GB' : (x.size / 1e6).toFixed(0) + ' MB') : ''].filter(Boolean).join(' · ');
+      d.videos.forEach((x) => {
+        const state = x.state ? el('a', { class: 'btn btn-xs', href: '#/studio/' + enc(x.job) }, icon('sliders'), x.state === 'done' ? 'Đã làm' : 'Đang làm dở') : null;
+        const box = el('input', { type: 'checkbox', checked: picked.has(x.src), 'aria-label': 'Chọn ' + x.label, onchange: () => { if (box.checked) picked.add(x.src); else picked.delete(x.src); paintGo(); } });
+        rows.append(el('label', { class: 'fm-ep' }, d.videos.length > 1 ? box : null, el('span', { class: 'fm-ep-name', text: x.label }), el('span', { class: 'dim small mono', text: info(x) }), state));
+      });
+      parts.push(el('div', { class: 'fm-eps-head' }, el('h4', { text: d.videos.length > 1 ? `${d.videos.length} video trong mục này` : 'Video' }),
+        d.videos.length > 1 ? el('button', { class: 'btn btn-ghost btn-xs', onclick: () => { const all = picked.size < d.videos.length; picked.clear(); if (all) d.videos.forEach((x) => picked.add(x.src)); rows.querySelectorAll('input').forEach((b) => { b.checked = all; }); paintGo(); } }, 'Chọn hết / bỏ chọn') : null),
+      rows,
+      el('p', { class: 'dim small fm-note', text: 'Phim không có lời thoại (phim câm, hoạt hình chỉ có nhạc) thì không lồng tiếng được. Phim cũ hay có tiếng rè: iContent tự tách lời khỏi nhạc nền trước khi nhận dạng.' }));
+      paintGo();
+      foot.append(go);
+      put(body, ...parts);
+      translateAll([d.title]);
+    }).catch((e) => { put(body, errorState(e.message, () => { m.close(); openFilm(v); })); });
+  }
+
+  async function loadFilms() {
+    fst.loading = true;
+    paintFilms();
+    try {
+      if (!fst.cats.length) fst.cats = (await api('GET', '/api/films/categories')).categories || [];
+      const r = await api('GET', `/api/films/search?cat=${enc(fst.cat)}&q=${enc(fst.q)}&sort=${enc(fst.sort)}&page=${fst.page}`);
+      if (!alive()) return;
+      Object.assign(fst, { data: r, error: '', en: r.en || '' });
+    } catch (e) {
+      if (!alive()) return;
+      Object.assign(fst, { data: null, error: e.message });
+    }
+    fst.loading = false;
+    if (st.tab === 'films') paintFilms();
+  }
+
+  function paintFilms() {
+    cleanupCards(filmBox);
+    const chip = (c) => el('button', { type: 'button', class: 'chip' + (c.id === fst.cat ? ' active' : ''), onclick: () => { fst.cat = c.id; fst.page = 1; setPref('fcat', c.id); loadFilms(); } }, c.name);
+    const sortSel = el('select', { class: 'input input-sm', 'aria-label': 'Sắp xếp phim', onchange: () => { fst.sort = sortSel.value; fst.page = 1; setPref('fsort', fst.sort); loadFilms(); } }, FILM_SORTS.map(([k, l]) => el('option', { value: k }, l)));
+    sortSel.value = fst.sort;
+    const d = fst.data;
+    const head = el('div', { class: 'dc-filterbar' }, el('div', { class: 'dc-filters' }, sortSel), el('span', { class: 'grow' }),
+      fst.q ? el('span', { class: 'dim small' }, `Tìm "${fst.q}"`, fst.en ? ` (bằng "${fst.en}")` : '', ' ', el('button', { class: 'btn btn-ghost btn-xs', onclick: () => { fst.q = ''; searchInp.value = ''; fst.page = 1; loadFilms(); } }, icon('x'), 'Bỏ tìm')) : null,
+      d && !fst.loading ? el('span', { class: 'dim small', text: `${fmtCount(d.total)} phim` }) : null);
+    const intro = el('p', { class: 'dim small fm-intro', text: 'Phim trọn bộ từ Internet Archive, chỉ lấy phim đã hết bản quyền (làm trước 1980) hoặc giấy phép CC BY: lồng tiếng, đăng lại và kiếm tiền được. Archive.org do cộng đồng đóng góp nên hiếm khi vẫn có nhãn sai, hãy xem lại trước khi đăng phim lớn.' });
+    let grid;
+    if (fst.loading) grid = el('div', { class: 'dc-grid' }, Array.from({ length: 12 }, () => el('div', { class: 'skel', style: { height: '300px' } })));
+    else if (fst.error) grid = el('div', { class: 'dc-grid single' }, errorState(fst.error, () => loadFilms()));
+    else if (!d || !d.items.length) grid = el('div', { class: 'dc-grid single' }, emptyState('Không có phim nào khớp', fst.q ? 'Thử từ khóa tiếng Anh khác, hoặc chọn thể loại khác.' : 'Thử thể loại khác.'));
+    else grid = el('div', { class: 'dc-grid' }, d.items.map(FilmCard));
+    const pager = d && d.pages > 1 && !fst.loading ? el('div', { class: 'fm-pager' },
+      el('button', { class: 'btn btn-sm', disabled: fst.page <= 1, onclick: () => { fst.page -= 1; loadFilms(); } }, icon('back'), 'Trang trước'),
+      el('span', { class: 'dim small mono', text: `${fst.page} / ${Math.min(d.pages, 50)}` }),
+      el('button', { class: 'btn btn-sm', disabled: fst.page >= Math.min(d.pages, 50), onclick: () => { fst.page += 1; loadFilms(); } }, 'Trang sau', icon('next'))) : null;
+    put(filmBox, intro, el('div', { class: 'dc-videohead' }, el('div', { class: 'dc-chips' }, fst.cats.map(chip))), head, grid, pager);
+    if (d && !fst.loading) translateAll(d.items.map((v) => v.title));
+  }
+
   // ------------------------------------------------ chuyển tab
   function paintTabs() {
+    const films = st.tab === 'films';
+    headH1.textContent = films ? 'Phim miễn phí bản quyền' : 'Bên Trung Quốc đang xem gì?';
+    headP.textContent = films
+      ? 'Phim truyện, hoạt hình, phim truyền hình đã hết bản quyền. Chọn phim, iContent tải về, dịch và lồng tiếng Việt.'
+      : 'Chọn video đang lên hoặc đề tài hot, bấm một nút là iContent tải về, dịch, lồng tiếng và xóa sub.';
+    legal.textContent = st.tab === 'films'
+      ? 'Phim từ Internet Archive (archive.org). Phim CC BY: dán dòng ghi nguồn ở Studio > Đăng bài vào mô tả khi đăng.'
+      : 'Video thuộc bản quyền của tác giả. Hãy xin phép hoặc làm đúng quy định của nền tảng trước khi đăng lại.';
     Object.entries(tabBtn).forEach(([k, b]) => {
       const on = k === st.tab;
       b.classList.toggle('active', on);
@@ -421,6 +569,9 @@ export async function viewDiscover(main, alive) {
       paintTopics();
     } else if (st.tab === 'search') {
       put(body, paintSearch());
+    } else if (st.tab === 'films') {
+      put(body, filmBox);
+      paintFilms();
     } else {
       put(body, st.saved.length ? el('div', { class: 'dc-grid' }, st.saved.map((v) => VideoCard(v))) : emptyState('Chưa lưu video nào', 'Bấm ngôi sao trên video để để dành làm sau.'));
       translateAll(st.saved.map((v) => v.title));
@@ -429,18 +580,21 @@ export async function viewDiscover(main, alive) {
   function setTab(k) {
     st.tab = k;
     if (k !== 'search') setPref('tab', k);
+    searchInp.placeholder = k === 'films' ? 'Tìm phim: tên phim, thể loại, diễn viên (tiếng Việt hoặc tiếng Anh)' : 'Tìm đề tài, gõ tiếng Việt hoặc tiếng Trung';
     repaint();
+    if (k === 'films' && !fst.data && !fst.loading) loadFilms();
     if (k === 'videos' && !st.items.length && !st.loading) load(false);
     if (k === 'topics' && !st.topics) loadTopics(false);
   }
   async function reload(refresh) {
     if (st.tab === 'topics') return loadTopics(refresh);
+    if (st.tab === 'films') return loadFilms();
     return load(refresh);
   }
 
   // ------------------------------------------------ khởi động
   if (st.tab === 'search') st.tab = 'videos';
   setTab(st.tab);
-  if (st.tab !== 'videos') load(false);
+  if (st.tab !== 'videos' && st.tab !== 'films') load(false);
   return () => { viQueue = []; viListeners.clear(); };
 }

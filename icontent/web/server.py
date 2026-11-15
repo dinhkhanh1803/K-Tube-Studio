@@ -408,6 +408,47 @@ def create_app(config_path: str | None = None) -> FastAPI:
     def get_about():
         return about_info()
 
+    # ------------------------------------------------------------------ phiên bản mới (icontent/updates.py)
+    @app.get("/api/update")
+    def update_state():
+        from .. import updates
+        return updates.snapshot()
+
+    @app.post("/api/update/check")
+    def update_check():
+        from .. import updates
+        return updates.check_now()
+
+    @app.post("/api/update/download")
+    def update_download():
+        from .. import updates
+        try:
+            return updates.start_download()
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.post("/api/update/install")
+    def update_install(body: dict = Body(default={})):
+        from .. import updates
+        from ..appwin import busy
+        if busy(app) and not body.get("force"):
+            raise HTTPException(409, "Đang có video xử lý. Đợi xong rồi cập nhật, hoặc bấm Vẫn cập nhật (việc đang chạy sẽ dừng, lần sau chạy lại).")
+        try:
+            updates.launch_installer()
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        server = getattr(app.state, "server", None)
+
+        def shut() -> None:
+            time.sleep(1.5)
+            updates.close_windows()
+            time.sleep(1.0)
+            if server is not None:
+                server.should_exit = True
+
+        threading.Thread(target=shut, daemon=True, name="ui-update-exit").start()
+        return {"ok": True}
+
     @app.get("/api/fonts")
     def fonts():
         root = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts"
@@ -683,6 +724,48 @@ def create_app(config_path: str | None = None) -> FastAPI:
             zh = ""
         return {"items": _mark_jobs(tr.search(q, zh, tt.cache)), "zh": zh, "links": search_links(zh or q)}
 
+    # ------------------------------------------------------------------ phim miễn phí bản quyền (films.py)
+    @app.get("/api/films/categories")
+    def film_categories():
+        from ..films import CATEGORIES
+        return {"categories": CATEGORIES}
+
+    @app.get("/api/films/search")
+    def film_search(cat: str = "feature", q: str = "", sort: str = "popular", page: int = 1):
+        from .. import films
+        q = q.strip()[:80]
+        en = ""
+        if q:
+            try:
+                en = films.to_english(q, st.cfg().translate)
+            except Exception as e:      # noqa: BLE001 — không dịch được thì tìm bằng chữ gốc
+                log("ui", f"Không dịch được từ khóa phim: {str(e)[:160]}")
+        try:
+            r = films.search(cat, en or q, sort, page)
+        except films.FilmError as e:
+            raise HTTPException(502, str(e))
+        return {**r, "items": _mark_jobs([{**v, "platform": "archive"} for v in r["items"]]), "en": en if en != q else ""}
+
+    @app.get("/api/films/item/{ident}")
+    def film_item(ident: str):
+        from .. import films
+        if not re.fullmatch(r"[A-Za-z0-9._-]{1,120}", ident):
+            raise HTTPException(400, "Mã phim archive.org không hợp lệ")
+        try:
+            d = films.detail(ident, int(st.cfg().download.max_height or 1080))
+        except films.FilmError as e:
+            raise HTTPException(502, str(e))
+        many = len(d["videos"]) > 1
+        w = st.work()
+        for v in d["videos"]:
+            jid = f"archive_{safe_name(ident, 40)}" + (f"_{short_hash(v['key'])[:6]}" if many else "")
+            v["src"] = films.item_url(ident, v["key"] if many else "")
+            if (w / jid / "final.mp4").exists():
+                v.update(state="done", job=jid)
+            elif (w / jid / "meta.json").exists():
+                v.update(state="started", job=jid)
+        return d
+
     @app.get("/api/trends/saved")
     def trend_saved():
         return {"items": _mark_jobs(load_json(SAVED_FILE) or [])}
@@ -784,8 +867,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
         from .. import langs, voxtts
         extra = {"vox": voxtts.voices(), "vox_ready": voxtts.ready(), "langs": langs.public()}      # rẻ, đổi khi tải gói: không cache
         if "voices" not in st._cache:
-            from ..voice import edge_voices_all, vieneu_voices
-            res = {"vieneu": [], "edge": []}
+            from ..voice import capcut_voices, edge_voices_all, vieneu_voices
+            res = {"vieneu": [], "edge": [], "capcut": []}
             try:
                 with tts_lock:
                     res["vieneu"] = vieneu_voices()
@@ -795,7 +878,11 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 res["edge"] = edge_voices_all()      # giọng Microsoft mọi thị trường, mỗi giọng có "lang"
             except Exception:
                 pass
-            if not res["vieneu"] and not res["edge"]:
+            try:
+                res["capcut"] = capcut_voices()      # giọng CapCut TikTok hot trend
+            except Exception as e:
+                log("ui", f"Không nạp được CapCut voices: {e}")
+            if not res["vieneu"] and not res["edge"] and not res["capcut"]:
                 return {**res, **extra, "mine": my_voices()}
             st._cache["voices"] = res
         return {**st._cache["voices"], **extra, "mine": my_voices()}      # giọng tự thu đổi thường xuyên: không cache
@@ -811,6 +898,23 @@ def create_app(config_path: str | None = None) -> FastAPI:
         text = (body.get("text") or langs.sample(lang)).strip()[:300]
         d = st.work() / "_preview"
         d.mkdir(parents=True, exist_ok=True)
+        if engine == "capcut":
+            from ..capcut_tts import CapCutClient
+            from ..voice import default_voice
+            v = voice or default_voice("capcut", lang, "female")
+            out = d / f"capcut_{short_hash(text, v)}.mp3"
+            if not out.exists():
+                try:
+                    client = CapCutClient(timeout=30)
+                    v_clean = v.replace("capcut:", "") if v else "BV075_streaming"
+                    v_type, res_id = client.resolve_voice(v_clean)
+                    res = client.generate_speech(texts=text, voice=v_type, resource_id=res_id)
+                    tmp = out.with_name(f"{out.stem}.part{out.suffix}")
+                    client.download_tts_audio(res, output_path=tmp)
+                    tmp.replace(out)
+                except Exception as e:
+                    raise HTTPException(502, f"CapCut TTS lỗi: {e}") from e
+            return FileResponse(out, media_type="audio/mpeg")
         if engine == "edge":
             from ..tts import synth_many
             from ..voice import default_voice
@@ -1226,6 +1330,176 @@ def create_app(config_path: str | None = None) -> FastAPI:
             clips.append([round(a, 3), round(b, 3)])
         qid = st.enqueue(str(p), None, None, title=meta.get("title", ""), job=jid, targets=targets, clips=clips, profiles=wanted, clip_profile=clip_profile)
         return {"qid": qid}
+
+    @app.post("/api/jobs/{jid}/split")
+    def job_split(jid: str, body: dict = Body(default={})):
+        """Băm nhỏ video thành nhiều tập theo độ dài mong muốn và điểm ngắt câu tự nhiên."""
+        p = st.job_dir(jid)
+        target_dur = float(body.get("target_duration") or 60.0)
+        prefix = str(body.get("title_prefix") or "Tập").strip()
+        add_badge = bool(body.get("add_badge", True))
+
+        target_vid = p / "final.mp4"
+        if not target_vid.exists():
+            target_vid = p / "source.mp4"
+        if not target_vid.exists():
+            raise HTTPException(404, "Chưa có video (final.mp4 hoặc source.mp4) để cắt")
+
+        from ..splitter import split_video
+        from ..models import load_segments
+        segs = load_segments(p / "segments.json")
+        parts_dir = p / "parts"
+        parts = split_video(target_vid, parts_dir, segs, target_duration=target_dur, title_prefix=prefix, add_badge=add_badge)
+        return {"parts": parts, "total": len(parts), "folder": str(parts_dir)}
+
+    @app.get("/api/jobs/{jid}/parts")
+    def job_parts(jid: str):
+        p = st.job_dir(jid)
+        manifest = p / "parts" / "parts.json"
+        if not manifest.exists():
+            return {"parts": []}
+        return {"parts": load_json(manifest) or []}
+
+    @app.get("/api/multilang/markets")
+    def multilang_markets():
+        from ..multilang import SUPPORTED_MARKETS
+        return {"markets": SUPPORTED_MARKETS}
+
+    @app.post("/api/jobs/{jid}/multilang")
+    def job_multilang(jid: str, body: dict = Body(...)):
+        """Xuất đồng thời nhiều phiên bản ngôn ngữ khác nhau."""
+        p = st.job_dir(jid)
+        targets = [str(x).strip().lower() for x in body.get("languages") or [] if str(x).strip()]
+        if not targets:
+            raise HTTPException(400, "Vui lòng chọn ít nhất 1 ngôn ngữ đích")
+        from ..multilang import render_multilang
+        res = render_multilang(p, targets, st.cfg())
+        return {"results": res, "total": len(res)}
+
+    @app.get("/api/jobs/{jid}/multilang")
+    def job_multilang_list(jid: str):
+        p = st.job_dir(jid)
+        manifest = p / "multilang.json"
+        if not manifest.exists():
+            return {"results": []}
+        return {"results": load_json(manifest) or []}
+
+    # ---- 24/7 Telegram Bot & Watchdog Assistant
+    @app.get("/api/bot/status")
+    def bot_status():
+        from ..telegram_bot import get_telegram_service
+        from ..watchdog import get_watchdog_service
+        tg = get_telegram_service()
+        wd = get_watchdog_service()
+        c = st.cfg()
+        return {
+            "telegram": {
+                "running": tg.is_running(),
+                "bot_info": tg.bot_info,
+                "current_job": tg.current_job,
+                "queue_size": tg._queue.qsize() if hasattr(tg, "_queue") else 0,
+                "token_configured": bool(c.telegram.get("bot_token")),
+                "admin_count": len(c.telegram.get("admin_chat_ids") or []),
+                "bot_token": c.telegram.get("bot_token") or "",
+                "admin_chat_ids": c.telegram.get("admin_chat_ids") or [],
+                "send_video": c.telegram.get("send_video", True),
+                "notify_progress": c.telegram.get("notify_progress", True),
+            },
+            "watchdog": {
+                "running": wd.is_running(),
+                "channels": c.watchdog.get("channels") or [],
+                "interval_minutes": c.watchdog.get("interval_minutes", 30),
+                "auto_render": c.watchdog.get("auto_render", True),
+                "last_check": wd.history.get("last_check"),
+                "seen_count": len(wd.history.get("seen_ids") or []),
+            },
+        }
+
+    @app.post("/api/bot/config")
+    def bot_save_config(body: dict = Body(...)):
+        tg_conf = body.get("telegram") or {}
+        wd_conf = body.get("watchdog") or {}
+
+        cur = {}
+        if st.config_path.exists():
+            cur = yaml.safe_load(st.config_path.read_text(encoding="utf-8")) or {}
+        if not isinstance(cur, dict):
+            cur = {}
+
+        cur.setdefault("telegram", {})
+        cur.setdefault("watchdog", {})
+
+        for k in ("bot_token", "admin_chat_ids", "send_video", "notify_progress", "enabled"):
+            if k in tg_conf:
+                cur["telegram"][k] = tg_conf[k]
+
+        for k in ("channels", "interval_minutes", "auto_render", "target_lang", "enabled"):
+            if k in wd_conf:
+                cur["watchdog"][k] = wd_conf[k]
+
+        st.config_path.write_text(yaml.safe_dump(cur, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+        from ..telegram_bot import get_telegram_service
+        from ..watchdog import get_watchdog_service
+        tg = get_telegram_service()
+        wd = get_watchdog_service()
+
+        if body.get("restart"):
+            tg.stop()
+            wd.stop()
+            tg_ok = tg.start()
+            wd_ok = wd.start()
+            return {"status": "saved_and_restarted", "telegram_running": tg_ok, "watchdog_running": wd_ok}
+
+        return {"status": "saved"}
+
+    @app.post("/api/bot/start")
+    def bot_start():
+        from ..telegram_bot import get_telegram_service
+        from ..watchdog import get_watchdog_service
+        tg = get_telegram_service()
+        wd = get_watchdog_service()
+        tg_ok = tg.start()
+        wd_ok = wd.start()
+        return {"telegram_started": tg_ok, "watchdog_started": wd_ok}
+
+    @app.post("/api/bot/stop")
+    def bot_stop():
+        from ..telegram_bot import get_telegram_service
+        from ..watchdog import get_watchdog_service
+        tg = get_telegram_service()
+        wd = get_watchdog_service()
+        tg.stop()
+        wd.stop()
+        return {"status": "stopped"}
+
+    @app.post("/api/bot/test")
+    def bot_test(body: dict = Body(None)):
+        from ..telegram_bot import TelegramBotClient
+        token = (body or {}).get("token") or st.cfg().telegram.get("bot_token")
+        if not token:
+            raise HTTPException(400, "Chưa nhập Bot Token")
+        try:
+            client = TelegramBotClient(token)
+            me = client.get_me()
+            admin_ids = (body or {}).get("admin_chat_ids") or st.cfg().telegram.get("admin_chat_ids") or []
+            sent_count = 0
+            for aid in admin_ids:
+                try:
+                    client.send_message(aid, "👋 *Xin chào từ K-Tube Studio!*\nKết nối Telegram Bot đã sẵn sàng hoạt động 24/7.")
+                    sent_count += 1
+                except Exception:
+                    pass
+            return {"ok": True, "bot": me, "notified_admins": sent_count}
+        except Exception as e:
+            raise HTTPException(400, f"Lỗi kết nối Telegram: {e}")
+
+    @app.post("/api/watchdog/scan")
+    def watchdog_manual_scan():
+        from ..watchdog import get_watchdog_service
+        wd = get_watchdog_service()
+        new_vids = wd.check_channels_once()
+        return {"new_videos": new_vids, "count": len(new_vids)}
 
     # ---- ghép nhiều video
     def _merges():

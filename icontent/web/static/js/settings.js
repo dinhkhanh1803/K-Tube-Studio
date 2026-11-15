@@ -6,6 +6,8 @@ import { cookiePanel, toolsPanel } from './fixes.js';
 import { aiPacks } from './localai.js';
 import { licensePanel } from './license.js';
 import { OptionsForm } from './options.js';
+import { botDashboard } from './bot.js';
+import { openChangelog } from './changelog.js';
 
 const PROVIDERS = [
   { id: 'router', name: '⚡ AI Router', sub: 'Tự chuyển API khi hết token (9router, Cockpit...)', key: '', get: '', cfg: { provider: 'router', model: '', base_url: '', api_key_env: '' } },
@@ -472,6 +474,9 @@ export async function viewSettings(main, alive) {
     el('section', { class: 'panel ai-panel' },
       el('div', { class: 'panel-head' }, icon('key'), el('h3', { text: 'Kết nối AI dịch' }), status && status.translator && status.translator.chosen_ready ? el('span', { class: 'pill ok', text: 'Đã kết nối' }) : status && status.translator && status.translator.ready ? el('span', { class: 'pill ok', text: 'Đang dùng dịch offline' }) : el('span', { class: 'pill warn', text: 'Chưa kết nối' })),
       provRow, provDetail),
+    el('section', { class: 'panel ai-panel', id: 'telegram-bot' },
+      el('div', { class: 'panel-head' }, icon('spark'), el('h3', { text: 'Trợ lý AI Telegram 24/7 & Theo dõi kênh (Watchdog)' })),
+      botDashboard(null)),
     el('section', { class: 'panel ai-panel', id: 'mo-dun-ai' },
       el('div', { class: 'panel-head' }, icon('cpu'), el('h3', { text: 'Mô-đun AI miễn phí (chạy trên máy)' })),
       el('p', { class: 'dim small aip-intro', text: 'Tải một lần, sau đó dịch và vẽ ảnh ngay trên máy: không cần key, không cần mạng, không giới hạn, không tốn tiền. Chạy được cả khi Gemini quá tải hay Google chặn.' }),
@@ -491,6 +496,7 @@ export async function viewSettings(main, alive) {
         el('div', { class: 'panel', id: 'sua-loi' }, el('div', { class: 'panel-head' }, icon('wand'), el('h3', { text: 'Sửa lỗi nhanh' })), toolsPanel()),
         el('div', { class: 'panel' }, el('div', { class: 'panel-head' }, icon('sliders'), el('h3', { text: 'Khác' })),
           el('div', { class: 'opt-inline' }, el('div', { class: 'opt-label', text: 'Chuông báo khi video xong' }), el('label', { class: 'switch' }, chime, el('span', { class: 'switch-track' }, el('span', { class: 'switch-thumb' })))),
+          el('button', { type: 'button', class: 'btn btn-sm', style: { width: '100%', marginTop: '10px' }, onclick: () => openChangelog() }, icon('clock'), ' Lịch sử cập nhật qua các ver'),
           el('p', { class: 'dim small', style: { marginTop: '12px' } }, 'File cấu hình: ', el('span', { class: 'mono', text: cfg.path || S.cfgPath || 'config.yaml' })),
           el('a', { class: 'btn btn-sm', href: '#/about' }, icon('coffee'), 'Giới thiệu & mời cà phê')))));
   paintProviders();
