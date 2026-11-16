@@ -105,7 +105,7 @@ ANALYZE_SCHEMA = {
     "additionalProperties": False,
 }
 
-ANALYZE_SYSTEM = """You prepare Chinese short videos for a {lang} voice-over dub that will be posted on TikTok, Reels and YouTube Shorts for {lang} viewers.
+ANALYZE_SYSTEM = """You prepare {what} for a {lang} voice-over dub that will be posted on TikTok, Reels and YouTube Shorts for {lang} viewers.
 
 You receive the video title and its full transcript. The transcript comes from speech recognition and can contain misheard words; when a line has a "screen" field, that is the subtitle burned into the video at that moment, read by OCR, and it is usually more accurate for names and numbers.
 
@@ -115,14 +115,85 @@ Read the whole transcript first, then return:
 - narrator_gender: the main speaker's gender if the content makes it clear (e.g. 我老公 → female, 我老婆 → male), else unknown.
 - speakers: in {lang}, who speaks and to whom (narrator to viewers, a dialogue between a customer and a shop owner, ...).
 - pronouns: in {lang}, the forms of address the dub must use consistently, written as concrete rules a translator can follow line by line. For Vietnamese this is the xưng hô scheme: how each speaker refers to themself and to the listener (tôi/mình/anh/em/chị/ông/cháu/mày/tao...), chosen to fit their age, relationship and tone, plus how the narrator addresses viewers (e.g. "mọi người", "các bạn").
-- glossary: names, places, brands, dishes and recurring terms with the {lang} rendering to use every time. Chinese person and place names use their Sino-Vietnamese reading; brands use the name {lang} viewers know.
+- glossary: names, places, brands, dishes and recurring terms with the {lang} rendering to use every time. {names_rule}
 - publish: a post kit written for {lang} viewers: title (catchy, at most 80 characters, faithful to the content), caption (2-3 short sentences ending with a light call to action), hashtags (5-8 tags, each starting with #, in the style common on {lang} TikTok, without spaces).
 Respond with JSON only."""
 
 
-def build_system_prompt(tcfg, context: dict | None = None) -> str:
+CHINESE = ("zh", "yue")
+SRC_NAMES = {"en": "English", "fr": "French", "es": "Spanish", "de": "German", "it": "Italian", "ru": "Russian", "pt": "Portuguese",
+             "ja": "Japanese", "ko": "Korean", "th": "Thai", "id": "Indonesian", "hi": "Hindi", "vi": "Vietnamese"}
+
+
+def source_lang(meta: dict | None, segs=None) -> str:
+    """Ngôn ngữ gốc của video: Whisper ghi vào meta.json (src_lang). Job cũ chưa có thì đoán theo chữ: có chữ Hán là tiếng Trung
+    (mặc định từ trước tới nay), không thì "" (ngôn ngữ khác, không rõ)."""
+    s = str((meta or {}).get("src_lang") or "")
+    if s:
+        return s
+    if segs:
+        from .asr import is_cjk_text
+        if not is_cjk_text("".join(x.text for x in segs[:80])):
+            return ""
+    return "zh"
+
+
+def source_name(src: str) -> str:
+    return SRC_NAMES.get(src) or LANG_NAMES.get(src) or "the original language"
+
+
+def analyze_prompt(lang: str, src: str) -> str:
+    if src in CHINESE:
+        return ANALYZE_SYSTEM.format(
+            lang=lang, what="Chinese short videos",
+            names_rule=f"Chinese person and place names use their Sino-Vietnamese reading; brands use the name {lang} viewers know.")
+    name = source_name(src)
+    return ANALYZE_SYSTEM.format(
+        lang=lang, what=f"{name}-language videos (often classic films, cartoons or TV episodes)",
+        names_rule=f"Person and place names keep their original spelling (no transliteration); brands and well-known places use the name {lang} viewers know.")
+
+
+def _foreign_head(tcfg, src: str, lang: str, unit: str) -> list[str]:
+    """Đầu lời nhắn khi tiếng gốc không phải tiếng Trung (phim tiếng Anh từ archive.org...)."""
+    name = source_name(src)
+    rules = [
+        f"You translate {name} film and video dialogue into {lang} for a voice-over dub.",
+        "",
+        f"Each request gives a JSON list of subtitle lines with an id, the {name} text (in the field 'zh', a fixed field name) and a max_len.",
+        "Return exactly one translation per id, in the same order. Never merge, split, drop or add lines: "
+        "the dub is placed on the video timeline line by line.",
+        f"A TTS voice reads each line inside the original line's time slot, so keep each translation at or "
+        f"under max_len {unit}. When the literal meaning does not fit, keep the core meaning and say it the "
+        "short, natural way a native narrator would. Drop filler (uh, um, well, you know) rather than translate it.",
+        f"The {name} comes from speech recognition and may contain misheard words, and old films can have noisy sound; "
+        "infer the intended meaning from the surrounding lines and the video title.",
+        "Some lines also carry 'screen': text burned into the video at that moment, read by OCR. Use it only to "
+        "correct recognition errors; translate what is spoken in this line ('zh').",
+        "Keep forms of address and pronouns consistent for the same speakers across the whole video.",
+    ]
+    if tcfg.target_lang == "vi":
+        rules += [
+            "Person and place names keep their original spelling (John, Mary, Chicago); do not transliterate them. "
+            "Countries and famous places use their usual Vietnamese name (England → nước Anh, Paris → Paris).",
+            "The original does not mark Vietnamese forms of address: choose xưng hô (tôi/anh/em/chị/ông/bà/cô/cháu/mày/tao...) "
+            "from each speaker's age, relationship and tone, and keep it once chosen.",
+            "Write numbers, prices and units the way they are read aloud in Vietnamese; keep foreign currencies as they are (đô la, bảng Anh).",
+        ]
+    else:
+        rules += [
+            f"This dub targets {lang}-speaking viewers: write natural, everyday spoken {lang} that a native narrator would say, "
+            "not a word-for-word translation.",
+            f"Person and place names keep their original form unless the name has an established form in {lang}.",
+            f"Write numbers, prices and units the way a {lang} narrator reads them aloud.",
+        ]
+    return rules
+
+
+def build_system_prompt(tcfg, context: dict | None = None, src: str = "zh") -> str:
     lang = LANG_NAMES.get(tcfg.target_lang, tcfg.target_lang)
     unit = _langs.unit_words(tcfg.target_lang)
+    if src not in CHINESE:
+        return _prompt_tail(tcfg, context, _foreign_head(tcfg, src, lang, unit))
     rules = [
         f"You translate Mandarin Chinese short-video subtitles into {lang} for a voice-over dub.",
         "",
@@ -158,6 +229,10 @@ def build_system_prompt(tcfg, context: dict | None = None) -> str:
             + ". Brands and products use their international names (小米 → Xiaomi, 抖音 → Douyin/TikTok).",
             f"Write numbers, prices and units the way a {lang} narrator reads them aloud; keep Chinese currency as yuan.",
         ]
+    return _prompt_tail(tcfg, context, rules)
+
+
+def _prompt_tail(tcfg, context: dict | None, rules: list[str]) -> str:
     if tcfg.style:
         rules.append(f"Tone and style: {tcfg.style}")
     gloss = {}
@@ -196,7 +271,7 @@ def _user_msg(items: list[dict], title: str, prev: list[str], shorten: bool) -> 
 # --------------------------------------------------------------------------- providers
 
 class ClaudeTranslator:
-    def __init__(self, tcfg, context: dict | None = None):
+    def __init__(self, tcfg, context: dict | None = None, src: str = "zh"):
         import anthropic
 
         self.anthropic = anthropic
@@ -204,7 +279,7 @@ class ClaudeTranslator:
         self.client = anthropic.Anthropic(api_key=key, max_retries=4) if key else anthropic.Anthropic(max_retries=4)
         self.model = tcfg.model or "claude-opus-5-5"
         self.effort = tcfg.effort or "medium"
-        self.system = build_system_prompt(tcfg, context)
+        self.system = build_system_prompt(tcfg, context, src)
         self.deadline: float | None = None      # time.time() phải xong trước lúc này (bước phụ như phân tích, xem analyze_video)
 
     def call(self, user: str, ids: list[int] | None = None) -> dict[int, str]:
@@ -318,7 +393,7 @@ def pick_gemini_flash(key: str, exclude: tuple = ()) -> str:
 
 
 class OpenAICompatTranslator:
-    def __init__(self, tcfg, context: dict | None = None):
+    def __init__(self, tcfg, context: dict | None = None, src: str = "zh"):
         from openai import OpenAI
 
         key = os.environ.get(tcfg.api_key_env or "OPENAI_API_KEY", "ollama")
@@ -328,7 +403,7 @@ class OpenAICompatTranslator:
         self.client = OpenAI(base_url=tcfg.base_url or None, api_key=key, max_retries=0 if self.gemini else 4, timeout=180 if self.gemini else 600)
         # "gemini-auto": chọn model lúc gọi thật, không phải lúc tạo (tạo chỉ để kiểm tra đã có AI chưa thì phải nhanh)
         self.model = GEMINI_AUTO if self.gemini and tcfg.model in ("", GEMINI_AUTO) else tcfg.model
-        self.system = build_system_prompt(tcfg, context)
+        self.system = build_system_prompt(tcfg, context, src)
         # Gemini đời mới mặc định suy nghĩ rất lâu (viết kịch bản 60 giây mất 2 phút); dịch, viết kịch bản không cần
         self.extra = {"reasoning_effort": "none"} if self.gemini else {}
         self.tried: list[str] = []
@@ -393,67 +468,35 @@ class OpenAICompatTranslator:
         return self._client().chat.completions.create(model=self.model, **kw, **self.extra)
 
     def json_call(self, system: str, user: str, schema: dict, max_tokens: int = 16000) -> dict:
-        r = self._create(
-            messages=[{"role": "system", "content": system + "\n\nJSON schema of the answer: " + json.dumps(schema)},
-                      {"role": "user", "content": user}],
-            response_format={"type": "json_object"},
-        )
-        txt = r.choices[0].message.content or "{}"
-        txt = txt.strip().removeprefix("```json").removeprefix("```").removesuffix("```")
-        return json.loads(txt)
-
-
-
-
-class SmartRouterTranslator:
-    def __init__(self, tcfg, context: dict | None = None):
-        from .router import get_router
-        self.tcfg = tcfg
-        self.context = context
-        self.system = build_system_prompt(tcfg, context)
-        self.lang = getattr(tcfg, "target_lang", "vi")
-        self.glossary = {str(k): str(v) for k, v in (getattr(tcfg, "glossary", None) or {}).items()}
-        pool = getattr(tcfg, "api_pool", None)
-        strategy = getattr(tcfg, "router_strategy", "failover")
-        self.router = get_router(pool, strategy)
-
-    def call(self, user: str, ids: list[int] | None = None) -> dict[int, str]:
-        data = self.json_call(self.system, user, SCHEMA)
-        return parse_items(data, ids)
-
-    def json_call(self, system: str, user: str, schema: dict, max_tokens: int = 16000) -> dict:
-        messages = [
-            {"role": "system", "content": system + "\n\nJSON schema of the answer: " + json.dumps(schema)},
-            {"role": "user", "content": user}
-        ]
-        try:
-            txt, endpoint = self.router.call_chat(
-                messages=messages,
-                response_format={"type": "json_object"},
-                max_tokens=max_tokens,
-            )
-            txt = txt.strip().removeprefix("```json").removeprefix("```").removesuffix("```")
-            return json.loads(txt)
-        except Exception as e:
-            if getattr(self.tcfg, "fallback_to_google", True):
-                log("translate", f"⚠️ Tất cả AI trong Router đều hết token ({e}). Tự động dùng Google Dịch miễn phí để cứu tiến trình!")
-                try:
-                    m = re.search(r'\[\s*\{.*\}\s*\]', user, re.DOTALL)
-                    if m:
-                        items = json.loads(m.group(0))
-                        gt = GoogleFreeTranslator(self.tcfg)
-                        trans = gt.translate_items(items)
-                        return {"items": [{"id": it["id"], "text": trans.get(it["id"], it.get("zh", ""))} for it in items]}
-                except Exception as ge:
-                    log("translate", f"Lỗi Google Dịch fallback: {ge}")
-            raise
+        """JSON hỏng thì hỏi lại một lần, kèm câu trả lời hỏng và lỗi. Đo thật 2026-11-13: Gemini dịch phim tiếng Anh có nhiều
+        dấu ngoặc kép ("Duck and Cover", "Bert the Turtle") hai lần liền trả JSON thiếu dấu thoát, cả phần còn lại bị đẩy sang
+        dịch offline; hỏi lại thì AI tự sửa."""
+        messages = [{"role": "system", "content": system + "\n\nJSON schema of the answer: " + json.dumps(schema)},
+                    {"role": "user", "content": user}]
+        for attempt in range(2):
+            r = self._create(messages=messages, response_format={"type": "json_object"})
+            raw = r.choices[0].message.content or "{}"
+            txt = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```")
+            try:
+                return json.loads(txt)
+            except json.JSONDecodeError as e:
+                if attempt:
+                    raise
+                log("translate", f"AI trả JSON hỏng ({e.msg}, ký tự {e.pos}), hỏi lại ...")
+                messages = messages + [
+                    {"role": "assistant", "content": raw},
+                    {"role": "user", "content": f"That answer is not valid JSON ({e.msg} at character {e.pos}). Send the same "
+                                                'answer again as strictly valid JSON: escape every double quote inside a string as \\" '
+                                                "(or use single quotes), no comments, no trailing commas, nothing outside the JSON."},
+                ]
+        raise RuntimeError("unreachable")
 
 
 class GoogleFreeTranslator:
-    def __init__(self, tcfg):
+    def __init__(self, tcfg, src: str = "zh"):
         from deep_translator import GoogleTranslator
 
-        self.gt = GoogleTranslator(source="zh-CN", target=_langs.get(tcfg.target_lang)["google"])
+        self.gt = GoogleTranslator(source="zh-CN" if src in CHINESE else "auto", target=_langs.get(tcfg.target_lang)["google"])
         self.lang = tcfg.target_lang
         self.glossary = {str(k): str(v) for k, v in (tcfg.glossary or {}).items()}
 
@@ -553,27 +596,17 @@ class OfflineTranslator:
         return out
 
 
-def make_translator(tcfg, context: dict | None = None):
+def make_translator(tcfg, context: dict | None = None, src: str = "zh"):
+    """src: ngôn ngữ gốc (xem source_lang). Dịch offline (Hy-MT2) tự nhận ngôn ngữ nguồn nên không cần."""
     p = tcfg.provider
-    if p in ("router", "openai"):
-        try:
-            from .router import get_router
-            r = get_router()
-            active_count = len([ep for ep in r.endpoints if ep.enabled and ep.resolve_key()])
-            if p == "router" or active_count > 1 or getattr(tcfg, "router_enabled", False):
-                return SmartRouterTranslator(tcfg, context)
-        except Exception:
-            pass
-    if p == "router":
-        return SmartRouterTranslator(tcfg, context)
     if p == "claude":
-        return ClaudeTranslator(tcfg, context)
+        return ClaudeTranslator(tcfg, context, src)
     if p == "openai":
-        return OpenAICompatTranslator(tcfg, context)
+        return OpenAICompatTranslator(tcfg, context, src)
     if p == "offline":
         return OfflineTranslator(tcfg)
     if p == "google":
-        return GoogleFreeTranslator(tcfg)
+        return GoogleFreeTranslator(tcfg, src)
     if p == "none":
         return None
     raise ValueError(f"translate.provider không hợp lệ: {p}")
@@ -644,7 +677,8 @@ def analyze_video(segs: list[Segment], cfg, meta: dict) -> dict | None:
     tc = cfg.translate
     if tc.provider not in ("claude", "openai") or not tc.analyze:
         return None
-    tr = make_translator(tc)
+    src = source_lang(meta, segs)
+    tr = make_translator(tc, src=src)
     lang = LANG_NAMES.get(tc.target_lang, tc.target_lang)
     lines = [_item(s, t=round(s.start, 1)) for s in segs]
     user = (f"Video title: {meta.get('title', '')}\n"
@@ -652,15 +686,16 @@ def analyze_video(segs: list[Segment], cfg, meta: dict) -> dict | None:
             + f"Duration: {meta.get('duration', 0):.0f}s\n\nTranscript:\n" + json.dumps(lines, ensure_ascii=False))
     log("analyze", f"Phân tích nội dung + xưng hô ({tc.provider}) ...")
     tr.deadline = time.time() + ANALYZE_BUDGET      # bước phụ: AI quá tải thì bỏ qua sau ít phút, không bắt khách chờ
-    data = tr.json_call(ANALYZE_SYSTEM.format(lang=lang), user, ANALYZE_SCHEMA, max_tokens=8000)
+    data = tr.json_call(analyze_prompt(lang, src), user, ANALYZE_SCHEMA, max_tokens=8000)
     log("analyze", f"{data.get('genre', '')}: {data.get('summary', '')[:120]}")
     return data
 
 
 def translate_segments(segs: list[Segment], cfg, meta: dict, only: set[int] | None = None,
-                       context: dict | None = None) -> list[Segment]:
-    """Dịch toàn bộ, hoặc chỉ các id trong `only` (giữ nguyên câu đã sửa tay)."""
-    tr = make_translator(cfg.translate, context)
+                       context: dict | None = None, span: tuple[int, int] | None = None) -> list[Segment]:
+    """Dịch toàn bộ, hoặc chỉ các id trong `only` (giữ nguyên câu đã sửa tay).
+    span=(đã dịch trước đó, tổng): lần dịch này chỉ là một phần, tiến độ tính trên cả video."""
+    tr = make_translator(cfg.translate, context, source_lang(meta, segs))
     if tr is None:
         return segs
     total = float(meta.get("duration") or (segs[-1].end if segs else 0))
@@ -668,13 +703,14 @@ def translate_segments(segs: list[Segment], cfg, meta: dict, only: set[int] | No
     # dịch offline đi từng câu một -> lô nhỏ để thanh tiến độ chạy đều
     bs = 5 if isinstance(tr, OfflineTranslator) else int(cfg.translate.batch_size)
     todo = [i for i, s in enumerate(segs) if only is None or s.id in only]
+    off, whole = span or (0, len(todo))
     for b in range(0, len(todo), bs):
         idxs = todo[b:b + bs]
         items = [_item(segs[i], max_len=max_len_for(slot_of(segs, i, total), cfg)) for i in idxs]
         first = idxs[0]
         prev = [f"{p.text} => {p.trans}" for p in segs[max(0, first - 4):first] if p.trans]
-        log("translate", f"Dịch câu {b + 1}-{b + len(idxs)} / {len(todo)} ({cfg.translate.provider})")
-        progress("translate", b / max(1, len(todo)))
+        log("translate", f"Dịch câu {off + b + 1}-{off + b + len(idxs)} / {whole} ({cfg.translate.provider})")
+        progress("translate", (off + b) / max(1, whole))
         check_cancel()
         res = _call_checked(tr, items, title, prev, shorten=False)
         for i in idxs:
@@ -685,7 +721,7 @@ def translate_segments(segs: list[Segment], cfg, meta: dict, only: set[int] | No
 def shorten_segments(segs: list[Segment], targets: dict[int, int], cfg, meta: dict,
                      context: dict | None = None) -> dict[int, str]:
     """targets: {id: max_len}. Trả về {id: bản dịch ngắn hơn}."""
-    tr = make_translator(cfg.translate, context)
+    tr = make_translator(cfg.translate, context, source_lang(meta, segs))
     if tr is None or isinstance(tr, GoogleFreeTranslator) or not targets:
         return {}
     by_id = {s.id: s for s in segs}

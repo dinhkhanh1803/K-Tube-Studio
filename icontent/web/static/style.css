@@ -826,6 +826,29 @@ select.input-xs { padding-right: 22px; background-position: right 5px center; }
 .dc-search-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .dc-chipbox { display: flex; flex-direction: column; gap: 8px; }
 .dc-arch { padding: 10px 12px; border: 1px dashed var(--line2); border-radius: 10px; display: flex; flex-direction: column; gap: 8px; }
+/* phim miễn phí (archive.org) */
+.fm-intro { margin: 0 0 12px; max-width: 900px; }
+.fm-thumb img { object-fit: contain; background: #000; }
+.fm-orig { color: var(--tx3); }
+.fm-lic { background: rgba(107,158,120,.16); color: #8fcf9f; }
+.fm-lic.by { background: rgba(143,182,227,.15); color: #8fb6e3; }
+.fm-year { background: var(--s2); color: var(--tx2); }
+.fm-pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 18px; }
+.fm-block { margin-top: 14px; }
+.fm-note { margin-top: 10px; }
+.fm-eps-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 16px 0 6px; }
+.fm-eps-head h4 { margin: 0; }
+.fm-eps { display: flex; flex-direction: column; max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.fm-ep { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.fm-ep:last-child { border-bottom: 0; }
+.fm-ep:hover { background: var(--s2); }
+.fm-ep input { accent-color: var(--amber); width: 16px; height: 16px; flex: none; }
+.fm-ep-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+@media (max-width: 720px) {
+  .dc-preview { flex-direction: column; } .dc-preview-side { min-width: 0; }
+  .dc-tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .dc-tabs .seg-btn { flex: none; white-space: nowrap; }
+}
 
 /* ------------------------------------------------------------------ sửa ảnh */
 .main.view-image { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
@@ -1675,6 +1698,10 @@ h1, h2, h3, h4 { letter-spacing: -.012em; }
 .cw-zone > .ico { width: 22px; height: 22px; color: var(--amber); flex: none; }
 .cw-zone:hover, .cw-zone:focus-visible, .cw-zone.over { border-color: var(--amber); background: var(--amber-soft); outline: none; }
 .cw-paste { font: 12px/1.5 var(--mono); }
+.cw-more { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.cw-more > summary { cursor: pointer; color: var(--tx2); font-size: 13px; padding: 4px 0; }
+.cw-more > summary:hover { color: var(--tx); }
+.cw-more[open] > summary { margin-bottom: 12px; }
 .cw-status { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; padding: 10px 12px; border-radius: 9px; font-size: 13px; line-height: 1.5; background: var(--s3); color: var(--tx2); }
 .cw-status > .ico { flex: none; width: 17px; height: 17px; margin-top: 2px; }
 .cw-status.ok { background: var(--ok-soft); color: var(--tx); }
@@ -1774,7 +1801,6 @@ h1, h2, h3, h4 { letter-spacing: -.012em; }
 .sp-help { margin-top: 4px; }
 .sp-modal { width: min(720px, 94vw); }
 
-
 /* K-Tube AI Router Pool */
 .router-panel { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
 .router-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -1867,3 +1893,26 @@ h1, h2, h3, h4 { letter-spacing: -.012em; }
 .fm-row-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .fm-row-meta { flex: 1; min-width: 0; }
 .fm-row-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------------------------------------------------------------- phiên bản và cập nhật (js/update.js) */
+.rail-ver { position: relative; display: flex; justify-content: center; margin-top: 2px; padding: 1px 2px; line-height: 14px; border: 0; background: none; color: var(--tx3); font-size: 10.5px; cursor: pointer; border-radius: 8px; }
+.rail-ver:hover { color: var(--tx); background: var(--s2); }
+.rail-ver .ver-dot { display: none; position: absolute; top: 3px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 0 2px var(--s1); }
+.rail-ver.has-update { color: var(--amber); }
+.rail-ver.has-update .ver-dot { display: block; }
+.upd { display: flex; flex-direction: column; gap: 14px; }
+.upd-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.upd-cur { font-size: 15px; }
+.upd-new { border: 1px solid var(--amber-soft); background: color-mix(in srgb, var(--amber) 7%, transparent); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.upd-new-t { display: flex; align-items: center; gap: 8px; color: var(--amber); font-size: 15px; }
+.upd-notes { margin: 0; white-space: pre-wrap; font: inherit; font-size: 13px; color: var(--tx2); max-height: 220px; overflow-y: auto; }
+.upd-act { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.upd-act p { margin: 0; }
+.upd-bar { width: 100%; height: 8px; border-radius: 4px; background: var(--s3); overflow: hidden; }
+.upd-bar i { display: block; height: 100%; background: var(--amber); transition: width .4s var(--ease); }
+.upd-ok { display: flex; align-items: center; gap: 8px; color: var(--ok, #3fb950); margin: 0; }
+.upd-err { color: var(--live); margin: 0; }
+.upd-going { display: flex; align-items: center; gap: 14px; padding: 8px 0; }
+.upd-going p { margin: 4px 0 0; }
+.modal-upd { width: min(560px, calc(100vw - 32px)); }
+.about-upd h3 { margin-top: 0; }

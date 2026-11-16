@@ -40,24 +40,25 @@ export const FIELDS = {
 
   'tts.enabled': { label: 'Lồng tiếng', type: 'toggle', fallback: true, hint: 'Tắt: chỉ làm phụ đề, giữ tiếng gốc' },
   'tts.engine': {
-    label: 'Bộ đọc', type: 'seg', fallback: 'vieneu', showIf: dubOn,
-    options: [['vieneu', 'VieNeu · tiếng Việt'], ['vox', 'Nhiều thứ tiếng · trên máy'], ['edge', 'Microsoft · online']],
+    label: 'Bộ đọc', type: 'seg', fallback: 'capcut', showIf: dubOn,
+    options: [['capcut', 'CapCut · TikTok hot'], ['vieneu', 'VieNeu · tiếng Việt'], ['vox', 'Nhiều thứ tiếng · trên máy'], ['edge', 'Microsoft · online']],
     // nút sáng là bộ đọc thật sự dùng: thị trường nước ngoài mà để VieNeu thì iContent tự dùng bộ khác
     effective: (v) => effE(v),
     optDisabled: (id, v) => (id === 'vieneu' && lang(v) !== 'vi') || (id === 'vox' && !S.voices.vox_ready),
-    hint: 'VieNeu chỉ đọc tiếng Việt: lồng thứ tiếng khác thì tự dùng bộ đọc nhiều thứ tiếng (tải ở Cài đặt > Mô-đun AI) hoặc Microsoft',
+    hint: 'CapCut: giọng hot trend TikTok miễn phí 100%. VieNeu: đọc trên máy. Microsoft: đọc qua mạng.',
   },
   'tts.voice_mode': {
     label: 'Cách chọn giọng', type: 'select', fallback: 'auto', showIf: dubOn, options: [
-      ['auto', 'Tự động: mỗi người nói một giọng'], ['per_line', 'Đoán nam/nữ theo từng câu'],
-      ['fixed', 'Một giọng cố định'], ['clone', 'Bắt chước giọng gốc (thử nghiệm)'],
+      ['auto', 'Tự động: mỗi người nói một giọng'], ['dialogue', '🎭 Tự động phân vai Nam - Nữ (Hội thoại)'],
+      ['per_line', 'Đoán nam/nữ theo từng câu'], ['fixed', 'Một giọng cố định'], ['clone', 'Bắt chước giọng gốc (thử nghiệm)'],
     ],
   },
+  'tts.capcut_voice': { label: 'Giọng CapCut', type: 'voice', engine: 'capcut', showIf: (v) => dubOn(v) && fixed(v) && effE(v) === 'capcut' },
   'tts.vieneu_voice': { label: 'Giọng', type: 'voice', engine: 'vieneu', showIf: (v) => dubOn(v) && fixed(v) && effE(v) === 'vieneu' },
   'tts.vox_voice': { label: 'Giọng', type: 'voice', engine: 'vox', showIf: (v) => dubOn(v) && fixed(v) && effE(v) === 'vox' },
   'tts.voice': { label: 'Giọng', type: 'voice', engine: 'edge', showIf: (v) => dubOn(v) && fixed(v) && effE(v) === 'edge' },
-  'tts.male_voice': { label: 'Giọng nam', type: 'voice', gender: 'male', resetOnEngine: true, showIf: (v) => dubOn(v) && ['auto', 'per_line'].includes(getPath(v, 'tts.voice_mode') || 'auto') },
-  'tts.female_voice': { label: 'Giọng nữ', type: 'voice', gender: 'female', resetOnEngine: true, showIf: (v) => dubOn(v) && ['auto', 'per_line'].includes(getPath(v, 'tts.voice_mode') || 'auto') },
+  'tts.male_voice': { label: 'Giọng nam', type: 'voice', gender: 'male', resetOnEngine: true, showIf: (v) => dubOn(v) && ['auto', 'per_line', 'dialogue'].includes(getPath(v, 'tts.voice_mode') || 'auto') },
+  'tts.female_voice': { label: 'Giọng nữ', type: 'voice', gender: 'female', resetOnEngine: true, showIf: (v) => dubOn(v) && ['auto', 'per_line', 'dialogue'].includes(getPath(v, 'tts.voice_mode') || 'auto') },
   'tts.max_speed': { label: 'Đọc nhanh tối đa', type: 'range', min: 1, max: 1.6, step: 0.05, fallback: 1.35, fmt: (x) => x.toFixed(2) + 'x', showIf: dubOn, hint: 'Câu cần đọc nhanh hơn mức này sẽ được AI rút gọn' },
   'tts.pronounce': { label: 'Từ điển phát âm', type: 'dict', keyPh: 'Chữ trong phụ đề', valPh: 'Đọc thành', addLabel: 'Thêm từ', hint: 'Sửa cách đọc mà không đổi phụ đề, ví dụ TikTok → Tíc Tốc', showIf: dubOn },
 

@@ -539,7 +539,7 @@ export const voiceHooks = new Set();
 export async function loadVoices() {
   try {
     const r = await api('GET', '/api/voices');
-    S.voices = { vieneu: r.vieneu || [], edge: r.edge || [], vox: r.vox || [], vox_ready: !!r.vox_ready, mine: r.mine || [] };
+    S.voices = { vieneu: r.vieneu || [], capcut: r.capcut || [], edge: r.edge || [], vox: r.vox || [], vox_ready: !!r.vox_ready, mine: r.mine || [] };
     if (r.langs) S.langs = r.langs;
     S.voicesVersion++;
     for (const f of [...voiceHooks]) { try { if (f() === false) voiceHooks.delete(f); } catch (e) { console.error(e); } }
@@ -548,14 +548,18 @@ export async function loadVoices() {
 export async function loadFonts() { try { S.fonts = (await api('GET', '/api/fonts')).fonts; } catch (_) { /* giữ mặc định */ } }
 /** Bộ đọc thật sự dùng cho ngôn ngữ đích (giống voice.engine_for ở máy chủ): VieNeu chỉ đọc tiếng Việt. */
 export function effEngine(engine, lang = 'vi') {
-  const e = engine || 'vieneu';
+  const e = engine || 'capcut';
+  if (e === 'capcut') return 'capcut';
   const voxOk = S.voices.vox_ready || !!(S.status && S.status.ai && S.status.ai.voices);
-  if (e === 'vox' && !voxOk) return lang === 'vi' ? 'vieneu' : 'edge';
+  if (e === 'vox' && !voxOk) return lang === 'vi' ? 'capcut' : 'edge';
   if (lang !== 'vi' && e === 'vieneu') return voxOk ? 'vox' : 'edge';
   return e;
 }
 export function langName(code) { const l = (S.langs || []).find((x) => x.code === code); return l ? l.name : code; }
 export function voiceList(engine, lang = 'vi') {
+  if (engine === 'capcut') {
+    return (S.voices.capcut || []).map((v) => ({ id: v.id, gender: genderOf(v.gender), label: v.label || v.id }));
+  }
   if (engine === 'edge') {
     return S.voices.edge.filter((v) => (v.lang || 'vi') === lang).map((v) => {
       const g = genderOf(v.gender);
@@ -571,6 +575,9 @@ export function voiceFits(voice, engine, lang = 'vi') {
   const v = String(voice || '');
   if (!v) return false;
   if (v.startsWith('me:')) return mineFits(engine, lang);
+  if (engine === 'capcut') {
+    return (S.voices.capcut || []).some((x) => x.id === v) || v.startsWith('BV') || v.startsWith('multi_') || v.startsWith('vi_');
+  }
   const isEdge = /-.*-.*Neural$/.test(v);
   const isVox = /^[a-z]{2}_[fm][12]$/.test(v);
   if (engine === 'edge') { const l = (S.langs || []).find((x) => x.code === lang); return isEdge && (!l || !l.edge_locale || v.startsWith(l.edge_locale + '-')); }
@@ -580,6 +587,9 @@ export function voiceFits(voice, engine, lang = 'vi') {
 /** Giọng mặc định theo bộ đọc, ngôn ngữ, giới tính (giống voice.default_voice ở máy chủ). */
 export function defaultVoice(engine, lang = 'vi', gender = 'female') {
   const female = gender === 'female';
+  if (engine === 'capcut') {
+    return female ? 'BV421_vivn_streaming' : 'BV075_streaming';
+  }
   if (engine === 'vox') { const v = (S.voices.vox || []).find((x) => x.lang === lang && x.id.endsWith(female ? '_f1' : '_m1')); return v ? v.id : ''; }
   if (engine === 'edge') {
     const l = (S.langs || []).find((x) => x.code === lang);

@@ -28,14 +28,28 @@ VIDEO_EXT = {".mp4", ".mkv", ".mov", ".flv", ".webm", ".avi", ".m4v", ".ts"}
 
 PLATFORMS = {
     "douyin": ("douyin.com", "iesdouyin.com"),
+    "tiktok": ("tiktok.com", "tikwm.com"),
+    "facebook": ("facebook.com", "fb.watch", "fb.com"),
+    "youtube": ("youtube.com", "youtu.be"),
     "bilibili": ("bilibili.com", "b23.tv"),
     "kuaishou": ("kuaishou.com", "gifshow.com"),
-    "xiaohongshu": ("xiaohongshu.com", "xhslink.com"),
+    "xiaohongshu": ("xiaohongshu.com", "xhslink.com", "rednote.com"),
     "weibo": ("weibo.com", "weibo.cn"),
     "xigua": ("ixigua.com",),
     "toutiao": ("toutiao.com",),
+    "archive": ("archive.org",),
 }
-SHORT_HOSTS = ("v.douyin.com", "b23.tv", "v.kuaishou.com", "xhslink.com", "t.cn")
+SHORT_HOSTS = (
+    "v.douyin.com",
+    "b23.tv",
+    "v.kuaishou.com",
+    "xhslink.com",
+    "t.cn",
+    "vt.tiktok.com",
+    "vm.tiktok.com",
+    "fb.watch",
+    "youtu.be",
+)
 
 
 def extract_url(text: str) -> str:
@@ -112,6 +126,20 @@ def fetch(src: str, cfg, force: bool = False) -> Path:
 
     url = normalize_url(src)
     plat = platform_of(url)
+
+    if plat == "archive":
+        from . import films
+        return films.fetch(url, work, cfg, force)
+
+    # 1. Thử tải trực tiếp KHÔNG WATERMARK qua clean_downloader trước
+    try:
+        from .clean_downloader import clean_download_job
+        clean_job = clean_download_job(url, plat, work, cfg, force)
+        if clean_job is not None:
+            return clean_job
+    except Exception as e:
+        log("download", f"Clean downloader notice: {e}")
+
     ext_cmd = (cfg.download.external or {}).get(plat)
     if ext_cmd:
         return _from_external(url, plat, ext_cmd, work, cfg, force)

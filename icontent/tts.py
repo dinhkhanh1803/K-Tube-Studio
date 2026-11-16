@@ -169,6 +169,41 @@ class _VieNeu:
         return failed
 
 
+class _CapCut:
+    """CapCut TTS API: Miễn phí 100%, tích hợp các giọng đọc hot trend TikTok."""
+
+    @classmethod
+    def synth_one(cls, text: str, voice: str, out: Path) -> None:
+        from .capcut_tts import CapCutClient
+        client = CapCutClient(timeout=30)
+        v_clean = voice.replace("capcut:", "") if voice else "BV075_streaming"
+        v_type, res_id = client.resolve_voice(v_clean)
+        res = client.generate_speech(texts=text, voice=v_type, resource_id=res_id)
+        tmp = out.with_name(f"{out.stem}.part{out.suffix}")
+        client.download_tts_audio(res, output_path=tmp)
+        tmp.replace(out)
+
+    @classmethod
+    def synth(cls, jobs: list[tuple[str, str, str, Path]], concurrency: int = 2, on_step=None) -> list[Path]:
+        from .util import check_cancel, log
+        failed = []
+        todo = [j for j in jobs if not j[3].exists()]
+        if not todo:
+            return failed
+        for n, (text, voice, _rate, out) in enumerate(todo, 1):
+            check_cancel()
+            try:
+                cls.synth_one(text, voice, out)
+            except Exception as e:
+                log("tts", f"CapCut TTS lỗi câu '{text[:40]}': {e}")
+                failed.append(out)
+            if on_step:
+                on_step(n, len(todo))
+            if n % 5 == 0:
+                log("tts", f"  CapCut TTS {n}/{len(todo)}")
+        return failed
+
+
 def _decoded(mp3: Path, tempo: float = 1.0) -> Path:
     """mp3 -> wav mono 44.1k đã cắt khoảng lặng đầu/cuối (+ atempo nếu cần). Có cache."""
     wav = mp3.with_name(f"{mp3.stem}_t{tempo:.3f}.wav")
@@ -227,8 +262,8 @@ def build_dub(segs: list[Segment], job: Path, cfg, meta: dict, shorten_fn=None,
             ref = str(Path(tc.ref_audio).resolve())
         elif clone_ref is not None:
             ref, use_codes = str(Path(clone_ref).resolve()), False
-    elif engine not in ("edge", "vox"):
-        raise ValueError(f"tts.engine không hợp lệ: {engine} (vieneu | vox | edge)")
+    elif engine not in ("edge", "vox", "capcut"):
+        raise ValueError(f"tts.engine không hợp lệ: {engine} (vieneu | vox | edge | capcut)")
 
     lines = [
         _Line(i, s, voice_for(s, cfg), slot_of(segs, i, total))
@@ -256,6 +291,8 @@ def build_dub(segs: list[Segment], job: Path, cfg, meta: dict, shorten_fn=None,
             spoken = apply_pronounce(ln.seg.trans, pronounce)
             if engine == "edge":
                 ln.mp3 = clips / f"{ln.seg.id:04d}_{short_hash(spoken, ln.voice, r)}.mp3"
+            elif engine == "capcut":
+                ln.mp3 = clips / f"{ln.seg.id:04d}_cc_{short_hash(spoken, ln.voice)}.mp3"
             elif engine == "vox":
                 ln.mp3 = clips / f"{ln.seg.id:04d}_vx_{short_hash(spoken, ln.voice)}.wav"
             else:
@@ -267,6 +304,8 @@ def build_dub(segs: list[Segment], job: Path, cfg, meta: dict, shorten_fn=None,
             log("tts", f"  đọc {n_new} câu mới" + (f" ({len(jobs) - n_new} câu dùng lại từ cache)" if n_new < len(jobs) else ""))
         if engine == "edge":
             synth_many(jobs, conc, tc.fallback_voice)
+        elif engine == "capcut":
+            _CapCut.synth(jobs, conc, on_step)
         elif engine == "vox":
             from .asr import release_model
             from .voxtts import synth_many as vox_synth

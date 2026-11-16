@@ -18,8 +18,8 @@ export async function viewVoiceover(main, alive) {
     (S.langs.length ? S.langs : [{ code: 'vi', name: 'Tiếng Việt' }]).map((l) => el('option', { value: l.code }, l.name)));
   lang.value = pref('lang', 'vi');
   const engine = el('select', { class: 'input', onchange: () => { setPref('engine', engine.value); setPref('voice', ''); fill(); } },
-    [['vieneu', 'VieNeu (tiếng Việt, chạy trên máy)'], ['vox', 'Nhiều thứ tiếng (chạy trên máy)'], ['edge', 'Microsoft (cần mạng)']].map(([k, l]) => el('option', { value: k }, l)));
-  engine.value = pref('engine', 'vieneu');
+    [['capcut', 'CapCut (giọng hot TikTok, miễn phí)'], ['vieneu', 'VieNeu (tiếng Việt, chạy trên máy)'], ['vox', 'Nhiều thứ tiếng (chạy trên máy)'], ['edge', 'Microsoft (cần mạng)']].map(([k, l]) => el('option', { value: k }, l)));
+  engine.value = pref('engine', 'capcut');
   const engineOf = () => effEngine(engine.value, lang.value);
   function syncEngines() {      // VieNeu chỉ đọc tiếng Việt; bộ đọc nhiều thứ tiếng phải tải ở Mô-đun AI
     for (const o of engine.options) o.disabled = (o.value === 'vieneu' && lang.value !== 'vi') || (o.value === 'vox' && !S.voices.vox_ready);

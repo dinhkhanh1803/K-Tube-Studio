@@ -125,6 +125,17 @@ def _safe_alignment() -> None:
 
 
 _CJK = re.compile(r"[㐀-鿿豈-﫿぀-ヿ가-힯]")
+LAST_LANGUAGE = ""          # ngôn ngữ Whisper nhận ra ở lần transcribe_words gần nhất (pipeline ghi vào meta.json: src_lang)
+# max_chars tính theo chữ Hán/Nhật/Hàn. Chữ Latin (phim tiếng Anh...) một chữ chở ít nghĩa hơn: 22 chữ Hán ~ 55 chữ cái
+# (không tính dấu cách), nếu không câu tiếng Anh bị cắt vụn 4-5 từ, dịch và lồng tiếng đều kém.
+LATIN_CHAR_FACTOR = 2.5
+
+
+def is_cjk_text(text: str) -> bool:
+    letters = re.sub(r"[\W_\d]+", "", text or "")
+    return bool(letters) and len(_CJK.findall(letters)) >= 0.3 * len(letters)
+
+
 _PUNCT = set(".,!?;:。，！？；：、…\"'“”‘’()（）《》「」")
 
 
@@ -221,6 +232,8 @@ def transcribe_words(wav16k: str | Path, acfg) -> list[tuple]:
             words.append((a, b, w, brk))
         log("asr", f"{s.start:7.2f}s  {s.text.strip()[:60]}")
     log("asr", f"Ngôn ngữ: {info.language} ({info.language_probability:.2f}), {len(words)} từ")
+    global LAST_LANGUAGE
+    LAST_LANGUAGE = str(info.language or "")
     return [(round(float(a), 3), round(float(b), 3), w, k) for a, b, w, k in words]
 
 
@@ -232,6 +245,8 @@ def resegment(words: list[tuple], acfg) -> list[Segment]:
     thì lùi về điểm ngắt mềm gần nhất (dấu phẩy, dấu cách, khoảng nghỉ ngắn) để không cắt ngang từ.
     """
     max_chars, max_dur, pause = int(acfg.max_chars), float(acfg.max_duration), float(acfg.pause_split)
+    if words and not is_cjk_text("".join(w[2] for w in words[:400])):
+        max_chars = int(max_chars * LATIN_CHAR_FACTOR)
     out: list[Segment] = []
     ws = [(w[0], w[1], w[2], w[3] if len(w) > 3 else 0) for w in words]
 

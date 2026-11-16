@@ -1,5 +1,6 @@
 /* K-Tube Studio - Giới thiệu */
 import { api, el, icon } from './core.js';
+import { openChangelog } from './changelog.js';
 
 let about = null;
 async function loadAbout() {
@@ -27,6 +28,9 @@ export async function viewAbout(main) {
         el('p', { class: 'muted', text: 'Tất cả video, phụ đề, mô hình âm thanh và API keys đều được lưu trữ hoàn toàn trên máy tính của bạn.' })),
       el('div', { class: 'panel' }, el('h3', { text: 'Bản quyền phần mềm' }),
         el('p', { class: 'muted', text: 'K-Tube Studio Pro - Phiên bản không giới hạn, toàn quyền sử dụng và tùy biến theo nhu cầu công việc của bạn.' })),
+      el('div', { class: 'panel' }, el('h3', { text: 'Lịch sử phiên bản' }),
+        el('p', { class: 'muted', text: 'Xem lại toàn bộ tính năng và cải tiến đã được cập nhật qua các phiên bản.' }),
+        el('button', { class: 'btn btn-primary btn-sm', style: { marginTop: '8px' }, onclick: () => openChangelog() }, icon('clock'), ' Xem lịch sử cập nhật qua các ver')),
       el('div', { class: 'panel' }, el('h3', { text: 'Công nghệ tích hợp' }),
         el('p', { class: 'muted', text: 'Tích hợp yt-dlp, faster-whisper, RapidOCR, VieNeu-TTS, FFmpeg, OpenCV cùng các mô hình trí tuệ nhân tạo tiên tiến.' }))));
   return null;
